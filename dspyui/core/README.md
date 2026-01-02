@@ -14,9 +14,10 @@ DSPy 程序编译的核心业务逻辑。
 | `modules.py` | 核心 | 创建 DSPy Module (Predict/CoT) |
 | `metrics.py` | 核心 | 评估指标 (精确匹配/余弦/LLM Judge)，支持 zero-shot 评判 |
 | `compiler.py` | 核心 | 程序编译主逻辑，默认使用 zero-shot 评判 |
-| `runner.py` | 核心 | 程序执行逻辑 |
+| `runner.py` | 核心 | 程序执行逻辑，包含元数据加载、单条推理和批量推理 |
 
-## 最近更新 (2024-12-31)
+## 最近更新 (2026-01-02)
 
-- `metrics.py`: 新增 `use_compiled` 参数，支持 zero-shot 评判模式
-- `compiler.py`: 默认使用 zero-shot 评判，简化训练流程
+- `runner.py`: 新增 `load_program_metadata()` 函数，支持加载程序元数据
+- `runner.py`: 新增 `run_batch_inference()` 函数，支持批量推理
+- `runner.py`: 新增 `validate_csv_headers()` 函数，验证 CSV 头部

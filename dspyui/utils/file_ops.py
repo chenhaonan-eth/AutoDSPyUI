@@ -1,9 +1,9 @@
 """
 文件操作工具
 
-INPUT:  prompts/, example_data/, datasets/ 目录
-OUTPUT: list_prompts(), load_example_csv(), export_to_csv() 函数
-POS:    工具函数，提供提示词和数据文件的读写操作
+INPUT:  prompts/, programs/, example_data/, datasets/ 目录
+OUTPUT: list_prompts(), list_programs(), load_example_csv(), export_to_csv() 函数
+POS:    工具函数，提供提示词、程序和数据文件的读写操作
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
 """
@@ -13,6 +13,77 @@ import json
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
+
+
+def list_programs() -> List[Dict[str, Any]]:
+    """
+    列出所有可用的已编译程序。
+    
+    扫描 programs/ 和 prompts/ 目录，返回同时存在两个文件的程序列表。
+    
+    Returns:
+        程序信息列表，每项包含：
+        - id: 程序 ID (human_readable_id 或文件名)
+        - signature: 签名 (input -> output 格式)
+        - model: 使用的 LLM 模型
+        - eval_score: 评估分数
+    """
+    programs_dir = 'programs'
+    prompts_dir = 'prompts'
+    
+    # 检查目录是否存在
+    if not os.path.exists(programs_dir):
+        print(f"Programs directory does not exist: {programs_dir}")
+        return []
+    
+    if not os.path.exists(prompts_dir):
+        print(f"Prompts directory does not exist: {prompts_dir}")
+        return []
+    
+    # 获取两个目录下的 JSON 文件名
+    program_files = {f for f in os.listdir(programs_dir) if f.endswith('.json')}
+    prompt_files = {f for f in os.listdir(prompts_dir) if f.endswith('.json')}
+    
+    # 找出同时存在于两个目录的文件
+    common_files = program_files & prompt_files
+    
+    if not common_files:
+        print("No programs found with both program and prompt files")
+        return []
+    
+    program_list: List[Dict[str, Any]] = []
+    
+    for filename in sorted(common_files):
+        prompt_path = os.path.join(prompts_dir, filename)
+        try:
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # 提取程序信息
+            program_id = data.get('human_readable_id', filename.replace('.json', ''))
+            signature = data.get('signature', '')
+            
+            # 如果没有 signature 字段，从 input_fields 和 output_fields 构建
+            if not signature:
+                input_fields = data.get('input_fields', [])
+                output_fields = data.get('output_fields', [])
+                signature = f"{', '.join(input_fields)} -> {', '.join(output_fields)}"
+            
+            model = data.get('llm_model', 'N/A')
+            eval_score = data.get('evaluation_score', 'N/A')
+            
+            program_list.append({
+                'id': program_id,
+                'signature': signature,
+                'model': model,
+                'eval_score': eval_score
+            })
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error reading prompt file {filename}: {e}")
+            continue
+    
+    print(f"Found {len(program_list)} available programs")
+    return program_list
 
 
 def list_prompts(

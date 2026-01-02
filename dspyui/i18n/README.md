@@ -10,3 +10,10 @@
 - `zh_CN.py` - 中文翻译字典，默认语言数据
 - `en_US.py` - 英文翻译字典，备用语言数据
 - `README.md` - 模块说明文档，架构概述
+
+## 翻译命名空间
+
+- `common.*` - 通用组件翻译
+- `compile.*` - 编译程序 Tab 翻译
+- `browse.*` - 浏览提示词 Tab 翻译
+- `run.*` - 运行程序 Tab 翻译 (Program Runner 功能)

@@ -43,4 +43,9 @@ CUSTOM_CSS: str = """
   margin: 10px 0 !important;
   color: #856404 !important;
 }
+/* 优化提示词文本框滚动样式 */
+.optimized-prompt-textbox textarea {
+  max-height: 400px !important;
+  overflow-y: auto !important;
+}
 """
