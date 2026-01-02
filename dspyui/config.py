@@ -1,8 +1,8 @@
 """
 DSPyUI 配置常量
 
-INPUT:  环境变量 (OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, DSPY_CACHE_ENABLED 等)
-OUTPUT: LLM_OPTIONS, SUPPORTED_GROQ_MODELS, SUPPORTED_GOOGLE_MODELS, 默认 LM 配置
+INPUT:  环境变量 (OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, DSPY_CACHE_ENABLED, DSPY_NUM_THREADS 等)
+OUTPUT: LLM_OPTIONS, SUPPORTED_GROQ_MODELS, SUPPORTED_GOOGLE_MODELS, 默认 LM 配置, 训练参数配置
 POS:    全局配置模块，被 core 和 ui 模块依赖
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
@@ -29,12 +29,18 @@ SUPPORTED_GOOGLE_MODELS: List[str] = [
     "gemini-1.5-pro"
 ]
 
+# 支持的 DeepSeek 模型列表
+SUPPORTED_DEEPSEEK_MODELS: List[str] = [
+    "deepseek-chat"
+]
+
 # UI 中显示的 LLM 模型选项
 LLM_OPTIONS: List[str] = [
     "gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini",
     "claude-3-5-sonnet-20240620", "claude-3-opus-20240229",
     *SUPPORTED_GROQ_MODELS,
-    *SUPPORTED_GOOGLE_MODELS
+    *SUPPORTED_GOOGLE_MODELS,
+    *SUPPORTED_DEEPSEEK_MODELS
 ]
 
 # 默认 LM 配置
@@ -44,6 +50,47 @@ DEFAULT_LM_MODEL = "openai/gpt-4o-mini"
 # DSPy 缓存配置
 # 从环境变量读取，默认启用缓存
 DSPY_CACHE_ENABLED: bool = os.environ.get("DSPY_CACHE_ENABLED", "true").lower() == "true"
+
+# ============================================================
+# 训练/编译参数配置
+# ============================================================
+
+# 并发线程数: 控制评估和优化时的并行度
+# 增大可加速训练，但需注意 LLM API 的并发限制
+DSPY_NUM_THREADS: int = int(os.environ.get("DSPY_NUM_THREADS", "1"))
+
+# ============================================================
+# MIPROv2 优化器参数
+# ============================================================
+
+# 候选提示词数量: 每轮生成多少个候选提示词进行评估
+# 越大搜索空间越广，但耗时越长
+MIPRO_NUM_CANDIDATES: int = int(os.environ.get("MIPRO_NUM_CANDIDATES", "10"))
+
+# 初始温度: 控制提示词生成的随机性
+# 较高温度产生更多样的候选，较低温度更保守
+MIPRO_INIT_TEMPERATURE: float = float(os.environ.get("MIPRO_INIT_TEMPERATURE", "1.0"))
+
+# 批次数量: 优化迭代的总批次数
+# 越多迭代越充分，但耗时越长
+MIPRO_NUM_BATCHES: int = int(os.environ.get("MIPRO_NUM_BATCHES", "30"))
+
+# 最大自举示例数: 从训练集自动生成的 few-shot 示例数量上限
+MIPRO_MAX_BOOTSTRAPPED_DEMOS: int = int(os.environ.get("MIPRO_MAX_BOOTSTRAPPED_DEMOS", "8"))
+
+# 最大标注示例数: 使用的人工标注示例数量上限
+MIPRO_MAX_LABELED_DEMOS: int = int(os.environ.get("MIPRO_MAX_LABELED_DEMOS", "16"))
+
+# ============================================================
+# BootstrapFewShot 优化器参数
+# ============================================================
+
+# 最大自举示例数: 自动生成的 few-shot 示例数量上限
+# 默认 4 个，太多会增加 token 消耗且可能引入噪声
+BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS: int = int(os.environ.get("BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS", "4"))
+
+# 最大标注示例数: 使用的人工标注示例数量上限
+BOOTSTRAP_MAX_LABELED_DEMOS: int = int(os.environ.get("BOOTSTRAP_MAX_LABELED_DEMOS", "4"))
 
 
 def configure_default_lm() -> dspy.LM:

@@ -12,6 +12,11 @@ DSPy 程序编译的核心业务逻辑。
 | `__init__.py` | 入口 | 导出核心 API |
 | `signatures.py` | 核心 | 创建自定义 DSPy Signature |
 | `modules.py` | 核心 | 创建 DSPy Module (Predict/CoT) |
-| `metrics.py` | 核心 | 评估指标 (精确匹配/余弦/LLM Judge) |
-| `compiler.py` | 核心 | 程序编译主逻辑 |
+| `metrics.py` | 核心 | 评估指标 (精确匹配/余弦/LLM Judge)，支持 zero-shot 评判 |
+| `compiler.py` | 核心 | 程序编译主逻辑，默认使用 zero-shot 评判 |
 | `runner.py` | 核心 | 程序执行逻辑 |
+
+## 最近更新 (2024-12-31)
+
+- `metrics.py`: 新增 `use_compiled` 参数，支持 zero-shot 评判模式
+- `compiler.py`: 默认使用 zero-shot 评判，简化训练流程

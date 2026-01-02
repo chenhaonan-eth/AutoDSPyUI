@@ -87,7 +87,8 @@ def create_cosine_similarity_metric(output_fields: List[str]) -> Callable:
 
 def create_llm_judge_metric(
     output_fields: List[str],
-    judge_prompt_id: str
+    judge_prompt_id: str,
+    use_compiled: bool = True
 ) -> Callable:
     """
     创建 LLM-as-a-Judge 指标。
@@ -95,12 +96,13 @@ def create_llm_judge_metric(
     Args:
         output_fields: 输出字段列表
         judge_prompt_id: 评判提示词 ID
+        use_compiled: 是否使用编译好的评判程序，False 则使用 zero-shot
 
     Returns:
         LLM 评判评估函数
 
     Raises:
-        ValueError: 当评判提示词或程序未找到时
+        ValueError: 当评判提示词未找到时
     """
     example2_id = "JokeTopic:Funny-Gpt4oMini_ChainOfThought_Bootstrapfewshotwithrandomsearch-20241003.json"
     
@@ -108,7 +110,11 @@ def create_llm_judge_metric(
     if judge_prompt_id == example2_id:
         judge_prompt_path = f"example_data/{judge_prompt_id}"
     else:
-        judge_prompt_path = f"prompts/{judge_prompt_id}.json"
+        # 如果 judge_prompt_id 已经包含 .json 后缀，则不再添加
+        if judge_prompt_id.endswith('.json'):
+            judge_prompt_path = f"prompts/{judge_prompt_id}"
+        else:
+            judge_prompt_path = f"prompts/{judge_prompt_id}.json"
     
     if not os.path.exists(judge_prompt_path):
         raise ValueError(f"Judge prompt not found: {judge_prompt_path}")
@@ -145,22 +151,27 @@ def create_llm_judge_metric(
     print("\nJudge Program:")
     print(judge_program)
     
-    # 加载编译好的评判程序
-    if judge_prompt_id == example2_id:
-        judge_program_path = f"example_data/{judge_human_readable_id}-program.json"
+    # 根据 use_compiled 参数决定是否加载编译好的评判程序
+    if use_compiled:
+        # 加载编译好的评判程序
+        if judge_prompt_id == example2_id:
+            judge_program_path = f"example_data/{judge_human_readable_id}-program.json"
+        else:
+            judge_program_path = f"programs/{judge_human_readable_id}.json"
+        
+        if not os.path.exists(judge_program_path):
+            print(f"Warning: Compiled judge program not found: {judge_program_path}")
+            print("Falling back to zero-shot judge program...")
+        else:
+            with open(judge_program_path, 'r') as f:
+                judge_program_content = json.load(f)
+            
+            print("\nCompiled Judge Program Content:")
+            print(json.dumps(judge_program_content, indent=2))
+            
+            judge_program.load(judge_program_path)
     else:
-        judge_program_path = f"programs/{judge_human_readable_id}.json"
-    
-    if not os.path.exists(judge_program_path):
-        raise ValueError(f"Compiled judge program not found: {judge_program_path}")
-    
-    with open(judge_program_path, 'r') as f:
-        judge_program_content = json.load(f)
-    
-    print("\nCompiled Judge Program Content:")
-    print(json.dumps(judge_program_content, indent=2))
-    
-    judge_program.load(judge_program_path)
+        print("\nUsing zero-shot judge program (no compiled program loaded)")
     
     def metric(gold: Any, pred: Any, trace: Any = None) -> float:
         try:
@@ -219,7 +230,8 @@ def create_llm_judge_metric(
 def create_metric(
     metric_type: str,
     output_fields: List[str],
-    judge_prompt_id: Optional[str] = None
+    judge_prompt_id: Optional[str] = None,
+    use_compiled_judge: bool = True
 ) -> Callable:
     """
     创建评估指标函数。
@@ -230,6 +242,7 @@ def create_metric(
         metric_type: 指标类型，支持 "Exact Match", "Cosine Similarity", "LLM-as-a-Judge"
         output_fields: 输出字段列表
         judge_prompt_id: 评判提示词 ID，仅在 LLM-as-a-Judge 时需要
+        use_compiled_judge: 是否使用编译好的评判程序，False 则使用 zero-shot
 
     Returns:
         评估指标函数
@@ -244,6 +257,6 @@ def create_metric(
     elif metric_type == "LLM-as-a-Judge":
         if judge_prompt_id is None:
             raise ValueError("Judge prompt ID is required for LLM-as-a-Judge metric")
-        return create_llm_judge_metric(output_fields, judge_prompt_id)
+        return create_llm_judge_metric(output_fields, judge_prompt_id, use_compiled_judge)
     else:
         raise ValueError(f"Unknown metric type: {metric_type}")

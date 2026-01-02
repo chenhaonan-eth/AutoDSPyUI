@@ -169,6 +169,7 @@ exported_data.csv
 testing.ipynb
 prompts/
 programs/
+example_data/
 .DS_Store
 .cursorrules
 notes/
@@ -178,3 +179,4 @@ prompt.md
 dspy/
 CLAUDE.md
 dspy-docs.md
+.kiro

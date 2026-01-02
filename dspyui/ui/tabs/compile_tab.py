@@ -20,6 +20,7 @@ from dspyui.core.compiler import compile_program
 from dspyui.core.runner import generate_program_response
 from dspyui.utils.file_ops import list_prompts, export_to_csv
 from dspyui.ui.components import add_field, remove_last_field, load_csv
+from dspyui.config import LLM_OPTIONS
 from dspyui.i18n import t
 
 
@@ -151,23 +152,15 @@ def create_compile_tab() -> None:
         with gr.Column():
             gr.Markdown(f"### {t('compile.settings.title')}")
             with gr.Row():
-                model_options = [
-                    "gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini",
-                    "claude-3-5-sonnet-20240620", "claude-3-opus-20240229",
-                    "claude-3-sonnet-20240229", "claude-3-haiku-20240307",
-                    "mixtral-8x7b-32768", "gemma-7b-it", "llama3-70b-8192",
-                    "llama3-8b-8192", "gemma2-9b-it", "gemini-1.5-flash-8b", 
-                    "gemini-1.5-flash", "gemini-1.5-pro"
-                ]
                 llm_model = gr.Dropdown(
-                    model_options,
+                    LLM_OPTIONS,
                     label=t("compile.settings.model_label"),
                     value="gpt-4o-mini",
                     info=t("compile.settings.model_info"),
                     interactive=True
                 )
                 teacher_model = gr.Dropdown(
-                    model_options,
+                    LLM_OPTIONS,
                     label=t("compile.settings.teacher_label"),
                     value="gpt-4o",
                     info=t("compile.settings.teacher_info"),
@@ -569,7 +562,8 @@ def create_compile_tab() -> None:
         def update_judge_prompt_visibility(metric, in_count, out_count, *field_values):
             """当 metric_type 变为 LLM-as-a-Judge 时，显示并填充 judge_prompt 下拉列表"""
             if metric != t("compile.metrics.llm_as_judge"):
-                return gr.update(visible=False, choices=[])
+                # 隐藏时同时清空 value，避免残留值导致 choices 不匹配错误
+                return gr.update(visible=False, choices=[], value=None)
             
             # 提取当前输入/输出字段名
             input_name_vals = field_values[:MAX_FIELDS]
@@ -583,7 +577,9 @@ def create_compile_tab() -> None:
             choices = [f"{p['ID']} - {p['Signature']} (Score: {p['Eval Score']})" for p in prompts]
             choices.append(EXAMPLE_JUDGE_SIGNATURE)
             
-            return gr.update(visible=True, choices=choices, value=EXAMPLE_JUDGE_SIGNATURE)
+            # 确保 value 在 choices 中，避免 Gradio 报错
+            default_value = EXAMPLE_JUDGE_SIGNATURE if EXAMPLE_JUDGE_SIGNATURE in choices else (choices[0] if choices else None)
+            return gr.update(visible=True, choices=choices, value=default_value)
 
         metric_type.change(
             update_judge_prompt_visibility,
