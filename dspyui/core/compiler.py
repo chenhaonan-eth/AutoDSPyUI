@@ -2,8 +2,9 @@
 DSPy 程序编译器
 
 INPUT:  input_fields, output_fields, dspy_module, llm_model, teacher_model, example_data, optimizer, instructions, metric_type, ...
+        mlflow_tracking 模块提供的追踪函数
 OUTPUT: compile_program() 函数，返回编译结果和优化后的提示词
-POS:    核心编译模块，是整个系统的核心功能
+POS:    核心编译模块，是整个系统的核心功能，集成 MLflow 追踪
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
 """
@@ -40,6 +41,18 @@ from dspyui.core.signatures import create_custom_signature
 from dspyui.core.modules import create_dspy_module
 from dspyui.core.metrics import create_metric
 from dspyui.utils.id_generator import generate_human_readable_id
+from dspyui.core.mlflow_tracking import (
+    init_mlflow,
+    track_compilation,
+    log_compilation_metrics,
+    log_compilation_artifacts,
+    log_dspy_model,
+    log_evaluation_table,
+    compute_dataset_hash,
+    log_dataset_metadata,
+    get_mlflow_ui_url,
+    truncate_param,
+)
 
 
 def _create_lm(model: str) -> dspy.LM:
@@ -88,11 +101,12 @@ def compile_program(
     input_descs: Optional[List[str]] = None,
     output_descs: Optional[List[str]] = None,
     hint: Optional[str] = None
-) -> Tuple[str, str]:
+) -> Tuple[str, str, Optional[str], Dict[str, Any]]:
     """
     编译 DSPy 程序。
 
     根据提供的配置和示例数据，优化并编译 DSPy 程序。
+    集成 MLflow 追踪，记录编译参数、指标和工件。
 
     Args:
         input_fields: 输入字段列表
@@ -110,11 +124,14 @@ def compile_program(
         hint: 提示信息 (ChainOfThoughtWithHint 时需要)
 
     Returns:
-        (usage_instructions, final_prompt) 元组
+        (usage_instructions, final_prompt, run_id) 元组，其中 run_id 为 MLflow Run ID（如果启用）
 
     Raises:
         ValueError: 当参数无效或示例数据不足时
     """
+    # 初始化 MLflow（如果启用）
+    init_mlflow()
+    
     # 设置 LLM 模型
     lm = _create_lm(llm_model)
     teacher_lm = _create_lm(teacher_model)
@@ -154,99 +171,209 @@ def compile_program(
     # 评估参数 (num_threads 从配置读取)
     kwargs = dict(num_threads=DSPY_NUM_THREADS, display_progress=True, display_table=1)
 
-    # 使用 dspy.context() 进行线程安全的 LM 配置
-    with dspy.context(lm=lm):
-        # 建立基线评估
-        baseline_evaluate = Evaluate(metric=metric, devset=devset, num_threads=DSPY_NUM_THREADS)
-        baseline_score = baseline_evaluate(module)
-
-        # 设置优化器
-        if optimizer == "BootstrapFewShot":
-            teleprompter = BootstrapFewShot(
-                metric=metric,
-                max_bootstrapped_demos=BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
-                max_labeled_demos=BOOTSTRAP_MAX_LABELED_DEMOS,
-                teacher_settings=dict(lm=teacher_lm)
-            )
-            compiled_program = teleprompter.compile(module, trainset=trainset)
-        elif optimizer == "BootstrapFewShotWithRandomSearch":
-            teleprompter = BootstrapFewShotWithRandomSearch(
-                metric=metric,
-                max_bootstrapped_demos=BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
-                max_labeled_demos=BOOTSTRAP_MAX_LABELED_DEMOS,
-                teacher_settings=dict(lm=teacher_lm),
-                num_threads=DSPY_NUM_THREADS
-            )
-            compiled_program = teleprompter.compile(module, trainset=trainset, valset=devset)
-        elif optimizer == "COPRO":
-            teleprompter = COPRO(
-                metric=metric,
-                teacher_settings=dict(lm=teacher_lm)
-            )
-            compiled_program = teleprompter.compile(module, trainset=trainset, eval_kwargs=kwargs)
-        elif optimizer == "MIPROv2":
-            teleprompter = MIPROv2(
-                metric=metric,
-                prompt_model=lm,
-                task_model=teacher_lm,
-                num_candidates=MIPRO_NUM_CANDIDATES,
-                init_temperature=MIPRO_INIT_TEMPERATURE
-            )
-            compiled_program = teleprompter.compile(
-                module,
-                trainset=trainset,
-                valset=devset,
-                num_batches=MIPRO_NUM_BATCHES,
-                max_bootstrapped_demos=MIPRO_MAX_BOOTSTRAPPED_DEMOS,
-                max_labeled_demos=MIPRO_MAX_LABELED_DEMOS,
-                eval_kwargs=kwargs,
-                requires_permission_to_run=False
-            )
-        else:
-            raise ValueError(f"Unsupported optimizer: {optimizer}")
-
-        # 评估编译后的程序
-        evaluate = Evaluate(metric=metric, devset=devset, num_threads=DSPY_NUM_THREADS)
-        score_result = evaluate(compiled_program)
-
-        # 提取数值分数 (兼容 EvaluationResult 对象和数值)
-        if hasattr(score_result, 'score'):
-            score = score_result.score
-        else:
-            score = float(score_result)
+    # 生成人类可读的 ID（提前生成，用于 MLflow run_name）
+    human_readable_id = generate_human_readable_id(
+        input_fields, output_fields, dspy_module,
+        llm_model, teacher_model, optimizer, instructions
+    )
+    
+    # 准备 MLflow 编译参数
+    compile_params = {
+        "input_fields": ",".join(input_fields),
+        "output_fields": ",".join(output_fields),
+        "dspy_module": dspy_module,
+        "llm_model": llm_model,
+        "teacher_model": teacher_model,
+        "optimizer": optimizer,
+        "metric_type": metric_type,
+        "instructions": truncate_param(instructions),
+        "dataset_hash": compute_dataset_hash(example_data),
+        "dataset_rows": len(example_data),
+        "dataset_columns": ",".join(example_data.columns.tolist()),
+    }
+    
+    # 添加可选参数
+    if judge_prompt_id:
+        compile_params["judge_prompt_id"] = judge_prompt_id
+    if hint:
+        compile_params["hint"] = truncate_param(hint)
+    
+    # MLflow Run 名称
+    run_name = f"{dspy_module}_{optimizer}_{llm_model}"
+    
+    # 使用 MLflow 追踪上下文管理器
+    with track_compilation(run_name, compile_params) as mlflow_run:
+        # 记录数据集元数据
+        log_dataset_metadata(example_data, "training_data")
         
-        # 同样处理 baseline_score
-        if hasattr(baseline_score, 'score'):
-            baseline_score = baseline_score.score
-        else:
-            baseline_score = float(baseline_score)
+        # 使用 dspy.context() 进行线程安全的 LM 配置
+        with dspy.context(lm=lm):
+            # 建立基线评估
+            baseline_evaluate = Evaluate(metric=metric, devset=devset, num_threads=DSPY_NUM_THREADS)
+            baseline_score = baseline_evaluate(module)
 
-        print("Evaluation Score:")
-        print(score)
+            # 设置优化器
+            if optimizer == "BootstrapFewShot":
+                teleprompter = BootstrapFewShot(
+                    metric=metric,
+                    max_bootstrapped_demos=BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
+                    max_labeled_demos=BOOTSTRAP_MAX_LABELED_DEMOS,
+                    teacher_settings=dict(lm=teacher_lm)
+                )
+                compiled_program = teleprompter.compile(module, trainset=trainset)
+            elif optimizer == "BootstrapFewShotWithRandomSearch":
+                teleprompter = BootstrapFewShotWithRandomSearch(
+                    metric=metric,
+                    max_bootstrapped_demos=BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
+                    max_labeled_demos=BOOTSTRAP_MAX_LABELED_DEMOS,
+                    teacher_settings=dict(lm=teacher_lm),
+                    num_threads=DSPY_NUM_THREADS
+                )
+                compiled_program = teleprompter.compile(module, trainset=trainset, valset=devset)
+            elif optimizer == "COPRO":
+                teleprompter = COPRO(
+                    metric=metric,
+                    teacher_settings=dict(lm=teacher_lm)
+                )
+                compiled_program = teleprompter.compile(module, trainset=trainset, eval_kwargs=kwargs)
+            elif optimizer == "MIPROv2":
+                teleprompter = MIPROv2(
+                    metric=metric,
+                    prompt_model=lm,
+                    task_model=teacher_lm,
+                    num_candidates=MIPRO_NUM_CANDIDATES,
+                    init_temperature=MIPRO_INIT_TEMPERATURE
+                )
+                compiled_program = teleprompter.compile(
+                    module,
+                    trainset=trainset,
+                    valset=devset,
+                    num_batches=MIPRO_NUM_BATCHES,
+                    max_bootstrapped_demos=MIPRO_MAX_BOOTSTRAPPED_DEMOS,
+                    max_labeled_demos=MIPRO_MAX_LABELED_DEMOS,
+                    eval_kwargs=kwargs,
+                    requires_permission_to_run=False
+                )
+            else:
+                raise ValueError(f"Unsupported optimizer: {optimizer}")
 
-        # 生成人类可读的 ID
-        human_readable_id = generate_human_readable_id(
-            input_fields, output_fields, dspy_module,
-            llm_model, teacher_model, optimizer, instructions
-        )
+            # 评估编译后的程序
+            evaluate = Evaluate(metric=metric, devset=devset, num_threads=DSPY_NUM_THREADS)
+            score_result = evaluate(compiled_program)
 
-        # 创建目录
-        os.makedirs('datasets', exist_ok=True)
-        os.makedirs('programs', exist_ok=True)
+            # 提取数值分数 (兼容 EvaluationResult 对象和数值)
+            if hasattr(score_result, 'score'):
+                score = score_result.score
+            else:
+                score = float(score_result)
+            
+            # 同样处理 baseline_score
+            if hasattr(baseline_score, 'score'):
+                baseline_score_value = baseline_score.score
+            else:
+                baseline_score_value = float(baseline_score)
 
-        # 保存数据集
-        dataset_path = os.path.join('datasets', f"{human_readable_id}.csv")
-        example_data.to_csv(dataset_path, index=False)
-        print(f"Dataset saved to {dataset_path}")
+            print("Evaluation Score:")
+            print(score)
 
-        # 保存编译后的程序
-        compiled_program.save(f"programs/{human_readable_id}.json")
-        print(f"Compiled program saved to programs/{human_readable_id}.json")
+            # 创建目录
+            os.makedirs('datasets', exist_ok=True)
+            os.makedirs('programs', exist_ok=True)
+            os.makedirs('prompts', exist_ok=True)
 
-        # 生成使用说明
-        usage_instructions = f"""Program compiled successfully!
+            # 保存数据集
+            dataset_path = os.path.join('datasets', f"{human_readable_id}.csv")
+            example_data.to_csv(dataset_path, index=False)
+            print(f"Dataset saved to {dataset_path}")
+
+            # 保存编译后的程序
+            program_path = f"programs/{human_readable_id}.json"
+            compiled_program.save(program_path)
+            print(f"Compiled program saved to {program_path}")
+
+            # 保存提示词详情
+            prompt_path = f"prompts/{human_readable_id}.json"
+            prompt_details = {
+                "input_fields": input_fields,
+                "input_descriptions": input_descs or [],
+                "output_fields": output_fields,
+                "output_descriptions": output_descs or [],
+                "dspy_module": dspy_module,
+                "llm_model": llm_model,
+                "teacher_model": teacher_model,
+                "optimizer": optimizer,
+                "instructions": instructions,
+                "signature": f"{', '.join(input_fields)} -> {', '.join(output_fields)}",
+                "evaluation_score": score,
+                "baseline_score": baseline_score_value,
+                "optimized_prompt": final_prompt,
+                "human_readable_id": human_readable_id,
+                "mlflow_run_id": mlflow_run.info.run_id if mlflow_run else None
+            }
+            with open(prompt_path, 'w', encoding='utf-8') as f:
+                json.dump(prompt_details, f, indent=4)
+            print(f"Prompt details saved to {prompt_path}")
+
+            # 记录 MLflow 编译指标
+            log_compilation_metrics(
+                baseline_score=baseline_score_value,
+                evaluation_score=score,
+                trainset_size=len(trainset),
+                devset_size=len(devset)
+            )
+            
+            # 记录 MLflow 编译工件
+            log_compilation_artifacts(
+                program_path=program_path,
+                prompt_path=prompt_path,
+                dataset_path=dataset_path
+            )
+            
+            # 记录 DSPy 模型（用于 Model Registry）
+            log_dspy_model(
+                compiled_program=compiled_program,
+                artifact_path="program"
+            )
+            
+            # 记录详细评估结果（如果可用）
+            if hasattr(score_result, 'results') and score_result.results:
+                # 将评估结果转换为标准格式
+                eval_results = []
+                for idx, result in enumerate(score_result.results):
+                    # 初始化记录
+                    eval_record = {"example_id": idx}
+                    
+                    # 灵活处理各种结果格式 (dict, tuple, list, scalar)
+                    if isinstance(result, dict):
+                        eval_record["score"] = float(result.get('score', 0))
+                        if 'example' in result: eval_record["input"] = str(result['example'])
+                        if 'prediction' in result: eval_record["actual_output"] = str(result['prediction'])
+                        if 'expected' in result: eval_record["expected_output"] = str(result['expected'])
+                    elif isinstance(result, (tuple, list)):
+                        # 处理常见元组格式: (example, prediction, score) 或 (score,)
+                        if len(result) >= 3:
+                            eval_record["input"] = str(result[0])
+                            eval_record["actual_output"] = str(result[1])
+                            eval_record["score"] = float(result[2])
+                        elif len(result) >= 1:
+                            eval_record["score"] = float(result[-1])
+                    else:
+                        # 标量分数
+                        eval_record["score"] = float(result)
+                        
+                    eval_results.append(eval_record)
+                
+                log_evaluation_table(
+                    eval_results=eval_results,
+                    artifact_name="eval_results.json",
+                    metric_name=metric_type,
+                    metric_config={"judge_prompt_id": judge_prompt_id} if judge_prompt_id else None
+                )
+
+            # 生成使用说明
+            usage_instructions = f"""Program compiled successfully!
 Evaluation score: {score}
-Baseline score: {baseline_score}
+Baseline score: {baseline_score_value}
 The compiled program has been saved as 'programs/{human_readable_id}.json'.
 You can now use the compiled program as follows:
 
@@ -256,22 +383,27 @@ result = compiled_program({', '.join(f'{field}=value' for field in input_fields)
 print({', '.join(f'result.{field}' for field in output_fields)})
 """
 
-        if dspy_module == "ChainOfThoughtWithHint":
-            usage_instructions += f"\nHint: {hint}\n"
+            if dspy_module == "ChainOfThoughtWithHint":
+                usage_instructions += f"\nHint: {hint}\n"
+            
+            # 添加 MLflow UI 链接（如果有活跃的 Run）
+            if mlflow_run:
+                mlflow_ui_url = get_mlflow_ui_url(run_id=mlflow_run.info.run_id)
+                usage_instructions += f"\nMLflow Run: {mlflow_ui_url}\n"
 
-        # 使用第一行数据测试编译后的程序
-        final_prompt = ""
-        if len(example_data) > 0:
-            first_row = example_data.iloc[0]
-            input_data = {field: first_row[field] for field in input_fields}
-            result = compiled_program(**input_data)
-            messages = dspy.settings.lm.history[-1]['messages']
-            for msg in messages:
-                final_prompt += f"{msg['content']}\n"
+            # 使用第一行数据测试编译后的程序
+            final_prompt = ""
+            if len(example_data) > 0:
+                first_row = example_data.iloc[0]
+                input_data = {field: first_row[field] for field in input_fields}
+                result = compiled_program(**input_data)
+                messages = dspy.settings.lm.history[-1]['messages']
+                for msg in messages:
+                    final_prompt += f"{msg['content']}\n"
 
-            example_output = f"\nExample usage with first row of data:\n"
-            example_output += f"Input: {input_data}\n"
-            example_output += f"Output: {result}\n"
-            usage_instructions += example_output
+                example_output = f"\nExample usage with first row of data:\n"
+                example_output += f"Input: {input_data}\n"
+                example_output += f"Output: {result}\n"
+                usage_instructions += example_output
 
-    return usage_instructions, final_prompt
+    return usage_instructions, final_prompt, (mlflow_run.info.run_id if mlflow_run else None), prompt_details

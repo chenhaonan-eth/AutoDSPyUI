@@ -1,8 +1,8 @@
 """
 DSPyUI 配置常量
 
-INPUT:  环境变量 (OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, DSPY_CACHE_ENABLED, DSPY_NUM_THREADS 等)
-OUTPUT: LLM_OPTIONS, SUPPORTED_GROQ_MODELS, SUPPORTED_GOOGLE_MODELS, 默认 LM 配置, 训练参数配置
+INPUT:  环境变量 (OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, DSPY_CACHE_ENABLED, DSPY_NUM_THREADS, MLflow 相关环境变量等)
+OUTPUT: LLM_OPTIONS, SUPPORTED_GROQ_MODELS, SUPPORTED_GOOGLE_MODELS, 默认 LM 配置, 训练参数配置, MLflow 配置常量
 POS:    全局配置模块，被 core 和 ui 模块依赖
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
@@ -107,6 +107,43 @@ def configure_default_lm() -> dspy.LM:
 
 # 国际化配置
 DEFAULT_LANGUAGE: str = os.environ.get("DSPYUI_LANGUAGE", "zh_CN")  # 默认中文，可通过环境变量切换
+
+# ============================================================
+# MLflow 集成配置
+# ============================================================
+
+# MLflow 启用开关: 控制是否启用 MLflow 追踪功能
+MLFLOW_ENABLED: bool = os.environ.get("MLFLOW_ENABLED", "true").lower() == "true"
+
+# MLflow 追踪服务器 URI: 指定 MLflow 追踪服务器地址
+# 默认使用本地服务器，需要先启动 MLflow 服务器 (bash webui.sh --mlflow)
+MLFLOW_TRACKING_URI: str = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+
+# MLflow 实验名称: 用于组织和分组相关的运行记录
+MLFLOW_EXPERIMENT_NAME: str = os.environ.get("MLFLOW_EXPERIMENT_NAME", "dspyui-experiments")
+
+# MLflow UI 基础 URL: 当无法从 tracking URI 推断时使用
+# 留空时会尝试从 MLFLOW_TRACKING_URI 推断，或回退到 http://localhost:5000
+MLFLOW_UI_BASE_URL: str = os.environ.get("MLFLOW_UI_BASE_URL", "")
+
+# ============================================================
+# MLflow Autolog 参数配置
+# ============================================================
+
+# 启用 LLM 调用追踪: 记录所有 LLM 请求和响应的详细信息
+MLFLOW_LOG_TRACES: bool = os.environ.get("MLFLOW_LOG_TRACES", "true").lower() == "true"
+
+# 编译时追踪: 在 DSPy 程序编译过程中记录 LLM 调用
+MLFLOW_LOG_TRACES_FROM_COMPILE: bool = os.environ.get("MLFLOW_LOG_TRACES_FROM_COMPILE", "false").lower() == "true"
+
+# 评估时追踪: 在程序评估过程中记录 LLM 调用
+MLFLOW_LOG_TRACES_FROM_EVAL: bool = os.environ.get("MLFLOW_LOG_TRACES_FROM_EVAL", "true").lower() == "true"
+
+# 编译过程记录: 自动记录编译过程的参数和配置
+MLFLOW_LOG_COMPILES: bool = os.environ.get("MLFLOW_LOG_COMPILES", "true").lower() == "true"
+
+# 评估过程记录: 自动记录评估过程的指标和结果
+MLFLOW_LOG_EVALS: bool = os.environ.get("MLFLOW_LOG_EVALS", "true").lower() == "true"
 
 # 初始化默认 LM
 default_lm = configure_default_lm()

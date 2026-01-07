@@ -15,11 +15,11 @@
 ## 快速使用
 
 ```bash
-# 1. 筛选高质量数据
+# 1. 筛选高质量数据 (good + fix)
 python scripts/filter_quality_data.py \
     --input results_reviewed.csv \
     --output high_quality_data.csv \
-    --quality excellent
+    --quality good,fix
 
 # 2. 合并数据集
 python scripts/merge_datasets.py \

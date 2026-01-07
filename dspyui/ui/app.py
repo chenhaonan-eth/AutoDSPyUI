@@ -13,7 +13,7 @@ import gradio as gr
 from dspyui.ui.styles import CUSTOM_CSS
 from dspyui.ui.tabs.compile_tab import create_compile_tab
 from dspyui.ui.tabs.browse_tab import create_browse_tab
-from dspyui.ui.tabs.run_tab import create_run_tab
+from dspyui.ui.tabs.test_tab import create_test_tab
 from dspyui.ui.language_switcher import create_language_switcher
 from dspyui.i18n import t
 
@@ -39,7 +39,7 @@ def create_app() -> gr.Blocks:
         # 主要内容区域
         with gr.Tabs():
             create_compile_tab()
-            create_run_tab()
+            create_test_tab()
             create_browse_tab()
     
     # Store CSS for use in launch()

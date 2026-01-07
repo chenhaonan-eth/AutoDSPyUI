@@ -145,115 +145,26 @@ TRANSLATIONS = {
             "header_mismatch": "错误：期望的标题为 {expected}，实际为 {actual}",
             "general_error": "错误：{error}",
             "no_human_readable_id": "无法提取可读 ID"
-        }
-    },
-    
-    # 运行程序 Tab
-    "run": {
-        "tab_title": "运行程序",
-        "title": "程序运行器",
-        "subtitle": "加载已编译的 DSPy 程序并进行交互式推理。",
-        
-        # 程序选择
-        "select_program": "选择程序",
-        "select_program_placeholder": "请选择一个程序...",
-        "no_programs_available": "没有可用的程序",
-        "refresh_programs": "刷新程序列表",
-        
-        # 程序信息展示
-        "program_info": {
-            "title": "程序信息",
-            "signature": "签名",
-            "model": "模型",
-            "teacher_model": "教师模型",
-            "optimizer": "优化器",
-            "module": "模块",
-            "instructions": "任务指令",
-            "evaluation_score": "评估分数",
-            "baseline_score": "基线分数",
-            "optimized_prompt": "优化后的提示词",
-            "view_prompt": "查看完整提示词",
-            "hide_prompt": "隐藏提示词"
         },
         
-        # 输入区域
-        "input_section": {
-            "title": "输入",
-            "description": "填写程序所需的输入字段。"
-        },
-        
-        # 输出区域
-        "output_section": {
-            "title": "输出",
-            "description": "程序生成的输出结果。"
-        },
-        
-        # 运行按钮和状态
-        "buttons": {
-            "run": "运行",
-            "running": "运行中...",
-            "clear": "清空",
-            "retry": "重试"
-        },
-        
-        # 模式切换
-        "mode": {
-            "single": "单条推理",
-            "batch": "批量推理",
-            "switch_to_batch": "切换到批量模式",
-            "switch_to_single": "切换到单条模式"
-        },
-        
-        # 批量处理
-        "batch": {
-            "title": "批量推理",
-            "upload_csv": "上传 CSV 文件",
-            "upload_description": "上传包含输入数据的 CSV 文件",
-            "expected_headers": "期望的列名",
-            "start_batch": "开始批量推理",
-            "progress": "处理进度",
-            "processing": "正在处理 {current}/{total}...",
-            "completed": "批量推理完成",
-            "results_preview": "结果预览",
-            "export_results": "导出结果",
-            "download_csv": "下载 CSV"
-        },
-        
-        # 历史记录
-        "history": {
-            "title": "历史记录",
-            "description": "最近的推理记录",
-            "empty": "暂无历史记录",
-            "clear": "清空历史",
-            "clear_confirm": "确定要清空所有历史记录吗？",
-            "timestamp": "时间",
-            "click_to_restore": "点击恢复输入"
-        },
-        
-        # 错误消息
-        "errors": {
-            "program_not_found": "程序文件未找到: {path}",
-            "metadata_not_found": "程序配置文件未找到: {path}",
-            "load_failed": "加载程序失败: {error}",
-            "inference_failed": "推理失败: {error}",
-            "csv_header_mismatch": "CSV 列名不匹配。期望: {expected}，实际: {actual}",
-            "csv_upload_failed": "CSV 上传失败: {error}",
-            "empty_input": "请填写所有必填字段",
-            "batch_row_error": "第 {row} 行处理失败: {error}"
-        },
-        
-        # 成功消息
-        "success": {
-            "inference_complete": "推理完成",
-            "batch_complete": "批量推理完成，共处理 {count} 条数据",
-            "history_cleared": "历史记录已清空"
-        },
-        
-        # 加载状态
-        "loading": {
-            "program": "正在加载程序...",
-            "inference": "正在执行推理...",
-            "batch": "正在处理批量数据..."
+        # MLflow 集成
+        "mlflow": {
+            "view_experiment": "查看 MLflow 实验",
+            "view_run": "查看此次运行",
+            "statistics_recorded": "📊 统计信息已记录到 MLflow",
+            "no_active_run": "ℹ️ 没有活跃的 MLflow Run，统计信息未记录",
+            "recording_failed": "⚠️ MLflow 记录失败: {error}",
+            "experiment_page_info": "MLflow 实验页面: {url}",
+            "run_page_info": "MLflow Run 页面: {url}",
+            "model_name_label": "模型名称",
+            "model_name_placeholder": "输入模型名称",
+            "register_model": "注册模型到 MLflow",
+            "register_model_empty_name": "❌ 请输入模型名称",
+            "register_model_no_run_id": "❌ 此编译没有关联的 MLflow Run ID，无法注册",
+            "register_model_mlflow_disabled": "❌ MLflow 未启用",
+            "register_model_registration_failed": "❌ 模型注册失败",
+            "register_model_exception": "❌ 注册失败: {error}",
+            "register_model_success": "✅ 模型注册成功！版本: {version}",
         }
     },
     
@@ -289,7 +200,67 @@ TRANSLATIONS = {
         "card": {
             "id": "ID",
             "signature": "签名",
-            "eval_score": "评估分数"
+            "eval_score": "评估分数",
+            "registered": "✅ 已注册",
+            "unregistered": "⚪ 未注册"
+        },
+        
+        # MLflow 集成
+        "mlflow": {
+            "registered_models_title": "已注册的模型",
+            "refresh_models": "刷新模型列表",
+            "model_name_label": "模型名称",
+            "model_name_placeholder": "输入模型名称",
+            "register_model": "注册模型",
+            "register_model_empty_name": "❌ 请输入模型名称",
+            "register_model_no_run_id": "❌ 此程序没有关联的 MLflow Run ID，无法注册",
+            "register_model_failed": "❌ 模型注册失败",
+            "register_model_error": "❌ 注册失败: {error}",
+            "register_model_success": "✅ 模型注册成功！版本: {version}",
+            "view_model": "查看模型",
+            "load_artifact_failed": "❌ 无法加载提示词工件，请检查 MLflow 运行状态",
+            "model_table_headers": {
+                "model_name": "模型名称",
+                "version": "版本",
+                "stage": "阶段",
+                "evaluation_score": "评估分数",
+                "creation_time": "创建时间",
+                "run_id": "运行 ID"
+            }
         }
+    },
+    
+    # 测试模型 Tab
+    "test": {
+        "tab_title": "测试模型",
+        "title": "模型测试",
+        "description": "从 MLflow 加载已注册模型进行测试。",
+        "mlflow_disabled": "⚠️ MLflow 未启用，无法使用此功能。",
+        
+        # 模型选择
+        "model_selection": "选择模型",
+        "model_name": "模型名称",
+        "model_version": "版本",
+        "llm_model": "推理 LLM",
+        
+        # 单条测试
+        "single_test": "单条测试",
+        "select_model_first": "请先选择一个模型",
+        "enter": "输入",
+        "run_test": "运行测试",
+        "output": "输出结果",
+        
+        # 批量测试
+        "batch_test": "批量测试",
+        "upload_csv": "上传 CSV 文件",
+        "run_batch": "批量推理",
+        "progress": "进度",
+        "batch_result": "批量结果",
+        "download_result": "下载结果",
+        
+        # 错误消息
+        "error_no_file": "请先上传 CSV 文件",
+        "error_no_model": "请先选择模型和版本",
+        "error": "错误"
     }
 }

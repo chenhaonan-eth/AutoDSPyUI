@@ -15,5 +15,17 @@
 
 - `common.*` - 通用组件翻译
 - `compile.*` - 编译程序 Tab 翻译
+  - `compile.mlflow.*` - MLflow 集成相关翻译
 - `browse.*` - 浏览提示词 Tab 翻译
-- `run.*` - 运行程序 Tab 翻译 (Program Runner 功能)
+  - `browse.mlflow.*` - MLflow 模型注册相关翻译
+- `test.*` - 测试模型 Tab 翻译
+
+
+## MLflow 集成翻译
+
+新增 MLflow 相关翻译支持：
+- 实验追踪界面文本
+- 模型注册功能文本
+- 批量推理统计信息
+- 错误和成功消息
+- UI 按钮和链接文本

@@ -12,6 +12,7 @@ A Gradio-based visual interface for DSPy - compile, test, and manage DSPy progra
 - 🌐 **Multi-language**: Full support for English and Chinese interfaces
 - 🔧 **Flexible LLM Support**: OpenAI, Anthropic, Groq, Google Gemini models
 - 📊 **Data Management**: Import/export datasets easily
+- 📈 **MLflow Integration**: Track experiments, register models, and manage program lifecycle
 
 ## 🚀 Quick Start
 
@@ -41,6 +42,22 @@ bash webui.sh
 uv sync
 uv run python main.py
 ```
+
+### MLflow Integration (Optional)
+
+DSPyUI integrates with MLflow for experiment tracking and model management:
+
+```bash
+# Start MLflow server (in a separate terminal)
+mlflow server --port 5000
+
+# Configure MLflow in your .env file
+MLFLOW_ENABLED=true
+MLFLOW_TRACKING_URI=http://localhost:5000
+MLFLOW_EXPERIMENT_NAME=dspyui-experiments
+```
+
+Visit `http://localhost:5000` to access the MLflow UI for viewing experiment results, comparing runs, and managing model versions.
 
 ## 🌍 Language Selection
 

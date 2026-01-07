@@ -20,7 +20,8 @@ from dspyui.core.compiler import compile_program
 from dspyui.core.runner import generate_program_response
 from dspyui.utils.file_ops import list_prompts, export_to_csv
 from dspyui.ui.components import add_field, remove_last_field, load_csv
-from dspyui.config import LLM_OPTIONS
+from dspyui.config import LLM_OPTIONS, MLFLOW_ENABLED
+from dspyui.core.mlflow_tracking import get_mlflow_ui_url
 from dspyui.i18n import t
 
 
@@ -64,6 +65,7 @@ def create_compile_tab() -> None:
         output_count = gr.State(0)
         file_data = gr.State(None)
         row_choice_options = gr.State([])
+        prompt_details_state = gr.State({})  # 存储程序详情，用于模型注册
         
         # === 4. 输入/输出按钮 ===
         with gr.Row():
@@ -214,12 +216,46 @@ def create_compile_tab() -> None:
                 signature = gr.Textbox(label=t("compile.results.signature_label"), interactive=False)
                 evaluation_score = gr.Number(label=t("compile.results.evaluation_score_label"), interactive=False)
                 baseline_score = gr.Number(label=t("compile.results.baseline_score_label"), interactive=False)
+            
+            # MLflow UI 链接区域
+            with gr.Row(visible=False) as mlflow_links_row:
+                mlflow_experiment_btn = gr.Button(
+                    t("compile.mlflow.view_experiment"), 
+                    variant="secondary",
+                    size="sm"
+                )
+                mlflow_run_btn = gr.Button(
+                    t("compile.mlflow.view_run"), 
+                    variant="secondary", 
+                    size="sm",
+                    visible=False
+                )
+                current_run_id = gr.State(None)
+            
             optimized_prompt = gr.Textbox(
                 label=t("compile.results.optimized_prompt_label"), 
                 interactive=False, 
                 lines=15,
                 max_lines=30
             )
+
+            # MLflow 模型注册区域
+            if MLFLOW_ENABLED:
+                with gr.Row(visible=False) as mlflow_register_row:
+                    with gr.Column(scale=3):
+                        model_name_input = gr.Textbox(
+                            label=t("compile.mlflow.model_name_label"),
+                            placeholder=t("compile.mlflow.model_name_placeholder"),
+                            interactive=True
+                        )
+                    with gr.Column(scale=1):
+                        register_model_btn = gr.Button(
+                            t("compile.mlflow.register_model"),
+                            variant="primary",
+                            size="sm"
+                        )
+                
+                register_status = gr.Markdown(visible=False)
 
         # === 9. 测试区域 ===
         with gr.Row():
@@ -351,47 +387,27 @@ def create_compile_tab() -> None:
             
             hint_val = hint if module == "ChainOfThoughtWithHint" else None
             
-            usage_result, opt_prompt = compile_program(
+            usage_result, opt_prompt, run_id, prompt_details = compile_program(
                 input_fields, output_fields, module, llm, teacher,
                 fdata, opt, instr, metric_key, judge_id, input_descs, output_descs, hint_val
             )
             
-            sig = f"{', '.join(input_fields)} -> {', '.join(output_fields)}"
-            
-            # Parse results
-            eval_score = 0.0
-            base_score = 0.0
-            hr_id = None
-            for line in usage_result.split('\n'):
-                if line.startswith("Evaluation score:"):
-                    eval_score = float(line.split(":")[1].strip())
-                elif line.startswith("Baseline score:"):
-                    base_score = float(line.split(":")[1].strip())
-                elif "programs/" in line and ".json" in line:
-                    hr_id = line.split('programs/')[1].split('.json')[0]
-            
-            if not hr_id:
-                raise ValueError(t("compile.errors.no_human_readable_id"))
-            
-            # Save prompt details
-            os.makedirs('prompts', exist_ok=True)
-            details = {
-                "input_fields": input_fields, "input_descriptions": input_descs,
-                "output_fields": output_fields, "output_descriptions": output_descs,
-                "dspy_module": module, "llm_model": llm, "teacher_model": teacher,
-                "optimizer": opt, "instructions": instr, "signature": sig,
-                "evaluation_score": eval_score, "baseline_score": base_score,
-                "optimized_prompt": opt_prompt, "human_readable_id": hr_id
-            }
-            with open(f"prompts/{hr_id}.json", 'w') as f:
-                json.dump(details, f, indent=4)
+            sig = prompt_details["signature"]
+            eval_score = prompt_details["evaluation_score"]
+            base_score = prompt_details["baseline_score"]
+            hr_id = prompt_details["human_readable_id"]
             
             row_opts = [f"Row {i+1}" for i in range(len(fdata))]
             
             return (sig, eval_score, opt_prompt, 
                     gr.update(choices=row_opts, visible=True, value="Row 1"),
                     gr.update(visible=True), row_opts, gr.update(visible=True),
-                    gr.update(visible=True), hr_id, gr.update(visible=True), base_score)
+                    gr.update(visible=True), hr_id, gr.update(visible=True), base_score,
+                    gr.update(visible=MLFLOW_ENABLED), run_id, 
+                    gr.update(visible=bool(run_id and MLFLOW_ENABLED)),
+                    gr.update(visible=bool(run_id and MLFLOW_ENABLED)),  # mlflow_register_row
+                    gr.update(value=f"{hr_id}-model"),                   # model_name_input
+                    prompt_details)                                             # prompt_details_state
 
         def generate_response(hr_id, row_sel, df):
             row_idx = int(row_sel.split()[1]) - 1
@@ -541,7 +557,9 @@ def create_compile_tab() -> None:
                     hint_textbox] + all_field_values,
             outputs=[signature, evaluation_score, optimized_prompt, row_selector,
                      random_row_button, row_choice_options, generate_button, 
-                     generate_output, human_readable_id, human_readable_id, baseline_score]
+                     generate_output, human_readable_id, human_readable_id, baseline_score,
+                     mlflow_links_row, current_run_id, mlflow_run_btn,
+                     mlflow_register_row, model_name_input, prompt_details_state]
         )
         
         generate_button.click(
@@ -557,6 +575,73 @@ def create_compile_tab() -> None:
         )
         
         dspy_module.change(update_hint_visibility, inputs=[dspy_module], outputs=[hint_textbox])
+
+        # MLflow UI 按钮事件
+        def open_mlflow_experiment():
+            """打开 MLflow 实验页面"""
+            if MLFLOW_ENABLED:
+                url = get_mlflow_ui_url()
+                gr.Info(t("compile.mlflow.experiment_page_info").format(url=url))
+                return url
+            return ""
+        
+        def open_mlflow_run(run_id):
+            """打开 MLflow Run 页面"""
+            if MLFLOW_ENABLED and run_id:
+                url = get_mlflow_ui_url(run_id=run_id)
+                gr.Info(t("compile.mlflow.run_page_info").format(url=url))
+                return url
+            return ""
+        
+        # 添加隐藏的文本框来显示 URL
+        mlflow_experiment_url = gr.Textbox(visible=False)
+        mlflow_run_url = gr.Textbox(visible=False)
+        
+        mlflow_experiment_btn.click(
+            open_mlflow_experiment,
+            outputs=[mlflow_experiment_url]
+        )
+        
+        mlflow_run_btn.click(
+            open_mlflow_run,
+            inputs=[current_run_id],
+            outputs=[mlflow_run_url]
+        )
+
+        # MLflow 模型注册
+        def on_register_model_click(model_name: str, run_id: str, prompt_details: Dict[str, Any]):
+            """处理注册模型按钮点击事件"""
+            from dspyui.core.mlflow_service import register_compiled_model
+            
+            # 调用业务逻辑层
+            result = register_compiled_model(
+                run_id=run_id,
+                model_name=model_name,
+                prompt_details=prompt_details
+            )
+            
+            # 根据结果更新 UI
+            if result.success:
+                message = t("compile.mlflow.register_model_success").format(
+                    version=result.version
+                ) + f" [{t('compile.mlflow.view_model')}]({result.model_url})"
+                return gr.update(visible=True, value=message)
+            else:
+                error_key = f"compile.mlflow.register_model_{result.error_code}"
+                if result.error_code == "exception":
+                    message = t("compile.mlflow.register_model_error").format(
+                        error=result.error_message
+                    )
+                else:
+                    message = t(error_key)
+                return gr.update(visible=True, value=message)
+
+        if MLFLOW_ENABLED:
+            register_model_btn.click(
+                on_register_model_click,
+                inputs=[model_name_input, current_run_id, prompt_details_state],
+                outputs=[register_status]
+            )
 
         # metric_type 变化时更新 judge_prompt 下拉列表
         def update_judge_prompt_visibility(metric, in_count, out_count, *field_values):

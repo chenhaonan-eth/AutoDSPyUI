@@ -81,22 +81,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-    # 筛选 excellent 级别的数据
-    python scripts/filter_quality_data.py --input reviewed.csv --output filtered.csv --quality excellent
+    # 筛选 good 级别的数据
+    python scripts/filter_quality_data.py --input reviewed.csv --output filtered.csv --quality good
     
-    # 筛选 excellent 和 good 级别的数据
-    python scripts/filter_quality_data.py --input reviewed.csv --output filtered.csv --quality excellent,good
+    # 筛选 good 和 fix 级别的数据 (fix 会自动使用修正后的值)
+    python scripts/filter_quality_data.py --input reviewed.csv --output filtered.csv --quality good,fix
     
     # 不使用修正数据
-    python scripts/filter_quality_data.py --input reviewed.csv --output filtered.csv --quality excellent --no-corrected
+    python scripts/filter_quality_data.py --input reviewed.csv --output filtered.csv --quality good --no-corrected
         """
     )
     parser.add_argument("--input", "-i", required=True, help="输入 CSV 文件路径")
     parser.add_argument("--output", "-o", required=True, help="输出 CSV 文件路径")
     parser.add_argument(
         "--quality", "-q",
-        default="excellent,good",
-        help="质量等级，逗号分隔 (默认: excellent,good)"
+        default="good,fix",
+        help="质量等级，逗号分隔 (默认: good,fix)"
     )
     parser.add_argument(
         "--no-corrected",
