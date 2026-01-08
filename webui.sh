@@ -15,6 +15,8 @@ show_help() {
     echo "  bash webui.sh --lang en_US       # 使用英文启动"
     echo "  bash webui.sh --no-mlflow        # 不启动 MLflow 服务器"
     echo "  bash webui.sh --mlflow-only      # 仅启动 MLflow 服务器"
+    echo "  bash webui.sh --api              # 同时启动 Gradio UI 和 API 服务"
+    echo "  bash webui.sh --api-only         # 仅启动 API 服务"
     echo "  bash webui.sh --help             # 显示此帮助信息"
     echo ""
     echo "支持的语言:"
@@ -25,15 +27,25 @@ show_help() {
     echo "  --no-mlflow    不启动 MLflow 服务器 (默认会启动)"
     echo "  --mlflow-only  仅启动 MLflow 服务器"
     echo ""
+    echo "API 服务选项:"
+    echo "  --api          同时启动 Gradio UI 和 API 服务"
+    echo "  --api-only     仅启动 API 服务 (不启动 Gradio UI)"
+    echo "  --api-port     API 服务端口 (默认: 8000)"
+    echo ""
     echo "环境变量:"
     echo "  DSPYUI_LANGUAGE     设置界面语言"
     echo "  MLFLOW_ENABLED      启用/禁用 MLflow 追踪 (true/false)"
     echo "  MLFLOW_TRACKING_URI MLflow 服务器地址"
+    echo "  API_HOST            API 服务监听地址 (默认: 0.0.0.0)"
+    echo "  API_PORT            API 服务监听端口 (默认: 8000)"
 }
 
 # 默认参数
 START_MLFLOW=true
 MLFLOW_ONLY=false
+START_API=false
+API_ONLY=false
+API_PORT_ARG=""
 
 # Check for .env file and source it if it exists
 if [ -f .env ]; then
@@ -70,6 +82,28 @@ while [[ $# -gt 0 ]]; do
             echo "仅启动 MLflow 服务器"
             shift
             ;;
+        --api)
+            START_API=true
+            echo "将同时启动 API 服务"
+            shift
+            ;;
+        --api-only)
+            API_ONLY=true
+            START_API=true
+            echo "仅启动 API 服务"
+            shift
+            ;;
+        --api-port)
+            if [ -n "$2" ]; then
+                API_PORT_ARG="$2"
+                echo "API 服务端口设置为: $2"
+                shift 2
+            else
+                echo "错误: --api-port 参数需要指定端口号"
+                show_help
+                exit 1
+            fi
+            ;;
         --help|-h)
             show_help
             exit 0
@@ -85,6 +119,16 @@ done
 # Function to cleanup and exit
 cleanup() {
     echo "正在清理进程..."
+    
+    # 停止 API 服务器（如果由此脚本启动）
+    if [ -n "$API_PID" ]; then
+        echo "停止 API 服务器 (PID: $API_PID)..."
+        kill -TERM "$API_PID" 2>/dev/null || true
+        sleep 1
+        if kill -0 "$API_PID" 2>/dev/null; then
+            kill -KILL "$API_PID" 2>/dev/null || true
+        fi
+    fi
     
     # 停止 MLflow 服务器（如果由此脚本启动）
     if [ -n "$MLFLOW_PID" ]; then
@@ -169,6 +213,55 @@ start_mlflow_server() {
     return 0
 }
 
+# 启动 API 服务器的函数
+start_api_server() {
+    echo "启动 API 服务器..."
+    
+    # 确定 API 端口
+    if [ -n "$API_PORT_ARG" ]; then
+        API_PORT=$API_PORT_ARG
+    else
+        API_PORT=${API_PORT:-8000}
+    fi
+    
+    # 检查端口是否被占用
+    if lsof -Pi :$API_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+        echo "⚠️  端口 $API_PORT 已被占用，尝试查找可用端口..."
+        API_PORT=$(find_available_port $API_PORT)
+    fi
+    
+    echo "将在端口 $API_PORT 上启动 API 服务器..."
+    
+    # API 日志文件
+    API_LOG_FILE=${API_LOG_FILE:-"data/api.log"}
+    mkdir -p "$(dirname "$API_LOG_FILE")"
+    echo "API 日志文件: $API_LOG_FILE"
+    
+    # 在后台启动 API 服务器
+    uv run python serve.py --port $API_PORT --log-level info > "$API_LOG_FILE" 2>&1 &
+    API_PID=$!
+    
+    echo "API 服务器已启动 (PID: $API_PID)"
+    echo "等待 API 服务器就绪..."
+    
+    # 等待服务器启动（最多等待 30 秒）
+    for i in {1..30}; do
+        if curl -s http://localhost:$API_PORT/health >/dev/null 2>&1; then
+            echo "✅ API 服务器已就绪: http://localhost:$API_PORT"
+            echo "   API 文档: http://localhost:$API_PORT/docs"
+            export API_PORT_ACTUAL=$API_PORT
+            return 0
+        fi
+        sleep 1
+        echo -n "."
+    done
+    
+    echo ""
+    echo "⚠️  API 服务器启动可能需要更多时间，请稍后访问 http://localhost:$API_PORT"
+    export API_PORT_ACTUAL=$API_PORT
+    return 0
+}
+
 # 如果只启动 MLflow 服务器
 if [ "$MLFLOW_ONLY" = true ]; then
     start_mlflow_server
@@ -180,6 +273,46 @@ if [ "$MLFLOW_ONLY" = true ]; then
     while true; do
         sleep 1
     done
+fi
+
+# 如果只启动 API 服务器
+if [ "$API_ONLY" = true ]; then
+    # 如果需要 MLflow，先启动它
+    if [ "$START_MLFLOW" = true ]; then
+        start_mlflow_server
+        export MLFLOW_ENABLED=true
+        export MLFLOW_TRACKING_URI="http://localhost:$MLFLOW_PORT_ACTUAL"
+        export MLFLOW_UI_BASE_URL="http://localhost:$MLFLOW_PORT_ACTUAL"
+        echo "MLflow Tracking URI set to: $MLFLOW_TRACKING_URI"
+        echo ""
+    fi
+    
+    # 检查 serve.py 是否存在
+    if [ ! -f serve.py ]; then
+        echo "serve.py 文件不存在，请确保文件在当前目录中"
+        exit 1
+    fi
+    
+    # 确定 API 端口
+    if [ -n "$API_PORT_ARG" ]; then
+        API_PORT=$API_PORT_ARG
+    else
+        API_PORT=${API_PORT:-8000}
+    fi
+    
+    echo ""
+    echo "API 服务器正在启动..."
+    echo "访问 http://localhost:$API_PORT 使用 API"
+    echo "访问 http://localhost:$API_PORT/docs 查看 API 文档"
+    if [ "$START_MLFLOW" = true ]; then
+        echo "访问 http://localhost:$MLFLOW_PORT_ACTUAL 查看 MLflow UI"
+    fi
+    echo "按 Ctrl+C 停止"
+    echo ""
+    
+    # 前台运行 API 服务器
+    uv run python serve.py --port $API_PORT --log-level info
+    exit 0
 fi
 
 # Check if uv is installed
@@ -263,6 +396,18 @@ echo "当前语言设置: ${DSPYUI_LANGUAGE:-zh_CN}"
 
 if [ "$START_MLFLOW" = true ]; then
     echo "MLflow UI: http://localhost:$MLFLOW_PORT_ACTUAL"
+fi
+
+# 如果需要同时启动 API 服务器
+if [ "$START_API" = true ]; then
+    # 检查 serve.py 是否存在
+    if [ ! -f serve.py ]; then
+        echo "serve.py 文件不存在，请确保文件在当前目录中"
+        exit 1
+    fi
+    start_api_server
+    echo "API 服务: http://localhost:$API_PORT_ACTUAL"
+    echo "API 文档: http://localhost:$API_PORT_ACTUAL/docs"
 fi
 
 echo "DSPyUI 启动中..."

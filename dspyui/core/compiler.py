@@ -129,6 +129,9 @@ def compile_program(
     Raises:
         ValueError: 当参数无效或示例数据不足时
     """
+    # 初始化变量
+    final_prompt = ""
+    
     # 初始化 MLflow（如果启用）
     init_mlflow()
     
@@ -391,15 +394,21 @@ print({', '.join(f'result.{field}' for field in output_fields)})
                 mlflow_ui_url = get_mlflow_ui_url(run_id=mlflow_run.info.run_id)
                 usage_instructions += f"\nMLflow Run: {mlflow_ui_url}\n"
 
-            # 使用第一行数据测试编译后的程序
+            # 初始化 final_prompt
             final_prompt = ""
+            
+            # 使用第一行数据测试编译后的程序
             if len(example_data) > 0:
                 first_row = example_data.iloc[0]
                 input_data = {field: first_row[field] for field in input_fields}
                 result = compiled_program(**input_data)
-                messages = dspy.settings.lm.history[-1]['messages']
-                for msg in messages:
-                    final_prompt += f"{msg['content']}\n"
+                
+                # 安全地获取 LLM 历史记录
+                if hasattr(dspy.settings, 'lm') and hasattr(dspy.settings.lm, 'history') and dspy.settings.lm.history:
+                    messages = dspy.settings.lm.history[-1].get('messages', [])
+                    for msg in messages:
+                        if isinstance(msg, dict) and 'content' in msg:
+                            final_prompt += f"{msg['content']}\n"
 
                 example_output = f"\nExample usage with first row of data:\n"
                 example_output += f"Input: {input_data}\n"

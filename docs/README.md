@@ -12,6 +12,7 @@
 | `data_recycling_guide.md` | 操作指南 | 数据回收再利用实操指南，包含完整工作流和脚本使用说明 |
 | `optimizer_dataset_requirements.md` | 参考文档 | 各优化器数据集数量需求，选型建议 |
 | `mlflow_integration.md` | 集成指南 | MLflow 实验追踪和模型管理集成说明 |
+| `serving_and_feedback.md` | 部署方案 | 模型部署、推理服务、用户反馈和数据飞轮闭环方案 |
 
 ## 文档索引
 
@@ -23,3 +24,6 @@
 
 ### 集成指南
 - [MLflow 集成指南](mlflow_integration.md) - 实验追踪、模型注册和程序生命周期管理
+
+### 部署方案
+- [模型部署与数据飞轮](serving_and_feedback.md) - 推理服务、用户反馈收集和数据飞轮闭环

@@ -1,17 +1,20 @@
 """
 DSPyUI 配置常量
 
-INPUT:  环境变量 (OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, DSPY_CACHE_ENABLED, DSPY_NUM_THREADS, MLflow 相关环境变量等)
-OUTPUT: LLM_OPTIONS, SUPPORTED_GROQ_MODELS, SUPPORTED_GOOGLE_MODELS, 默认 LM 配置, 训练参数配置, MLflow 配置常量
-POS:    全局配置模块，被 core 和 ui 模块依赖
+INPUT:  环境变量 (OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, DSPY_CACHE_ENABLED, DSPY_NUM_THREADS, MLflow 相关环境变量, API 服务相关环境变量等)
+OUTPUT: LLM_OPTIONS, SUPPORTED_GROQ_MODELS, SUPPORTED_GOOGLE_MODELS, 默认 LM 配置, 训练参数配置, MLflow 配置常量, APIConfig
+POS:    全局配置模块，被 core, ui 和 api 模块依赖
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
 """
 
+import logging
 import os
-from typing import List
+from typing import List, Optional
 
 import dspy
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
 
 # 支持的 Groq 模型列表
 SUPPORTED_GROQ_MODELS: List[str] = [
@@ -147,3 +150,114 @@ MLFLOW_LOG_EVALS: bool = os.environ.get("MLFLOW_LOG_EVALS", "true").lower() == "
 
 # 初始化默认 LM
 default_lm = configure_default_lm()
+
+
+# ============================================================
+# API 服务配置
+# ============================================================
+
+class APIConfig(BaseSettings):
+    """
+    API 服务配置
+    
+    支持通过环境变量配置所有参数，环境变量名与字段名一致（大写）。
+    """
+    
+    # 服务器配置
+    api_host: str = Field(default="0.0.0.0", description="API 服务监听地址")
+    api_port: int = Field(default=8000, description="API 服务监听端口")
+    api_workers: int = Field(default=4, description="Uvicorn worker 数量")
+    api_request_timeout: int = Field(default=60, description="请求超时时间（秒）")
+    
+    # 模型配置
+    default_model_stage: str = Field(default="Production", description="默认模型阶段")
+    model_cache_enabled: bool = Field(default=True, description="是否启用模型缓存")
+    model_cache_ttl: int = Field(default=3600, description="模型缓存 TTL（秒）")
+    
+    # LLM 配置
+    default_lm: str = Field(default="openai/gpt-4o-mini", description="默认 LLM 模型")
+    async_workers: int = Field(default=4, description="异步 LLM 调用 worker 数量")
+    
+    # 反馈配置
+    feedback_enabled: bool = Field(default=True, description="是否启用反馈收集")
+    
+    # MLflow 配置 (复用现有配置)
+    mlflow_tracking_uri: str = Field(default="http://localhost:5000", description="MLflow 追踪服务器地址")
+    
+    model_config = {
+        "env_prefix": "",
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
+    
+    @field_validator("api_port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        """验证端口号范围"""
+        if not 1 <= v <= 65535:
+            logging.warning(f"Invalid API_PORT {v}, using default 8000")
+            return 8000
+        return v
+    
+    @field_validator("api_workers")
+    @classmethod
+    def validate_workers(cls, v: int) -> int:
+        """验证 worker 数量"""
+        if v < 1:
+            logging.warning(f"Invalid API_WORKERS {v}, using default 4")
+            return 4
+        return v
+    
+    @field_validator("api_request_timeout")
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
+        """验证超时时间"""
+        if v < 1:
+            logging.warning(f"Invalid API_REQUEST_TIMEOUT {v}, using default 60")
+            return 60
+        return v
+    
+    @field_validator("model_cache_ttl")
+    @classmethod
+    def validate_cache_ttl(cls, v: int) -> int:
+        """验证缓存 TTL"""
+        if v < 0:
+            logging.warning(f"Invalid MODEL_CACHE_TTL {v}, using default 3600")
+            return 3600
+        return v
+    
+    @field_validator("default_model_stage")
+    @classmethod
+    def validate_stage(cls, v: str) -> str:
+        """验证模型阶段"""
+        valid_stages = ["None", "Staging", "Production", "Archived"]
+        if v not in valid_stages:
+            logging.warning(f"Invalid DEFAULT_MODEL_STAGE {v}, using default 'Production'")
+            return "Production"
+        return v
+
+
+# 缓存的 APIConfig 实例
+_api_config: Optional[APIConfig] = None
+
+
+def get_api_config() -> APIConfig:
+    """
+    获取 API 配置实例（单例模式）
+    
+    Returns:
+        APIConfig: API 配置实例
+    """
+    global _api_config
+    if _api_config is None:
+        _api_config = APIConfig()
+    return _api_config
+
+
+def reset_api_config() -> None:
+    """
+    重置 API 配置实例（用于测试）
+    """
+    global _api_config
+    _api_config = None
