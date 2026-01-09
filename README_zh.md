@@ -35,50 +35,73 @@ cp .env.example .env
 ### 运行
 
 ```bash
+# 1. 启动 MLflow Docker 服务（首次使用）
+cd docker/docker-compose
+docker-compose up -d
+cd ../..
+
+# 2. 启动 DSPyUI
 # 基础启动（中文界面）
 bash webui.sh
 
 # 英文界面
 bash webui.sh --lang en_US
 
-# 同时启动 MLflow 服务器
-bash webui.sh --mlflow
+# 同时启动 API 服务
+bash webui.sh --api
 
-# 仅启动 MLflow 服务器
-bash webui.sh --mlflow-only
+# 仅启动 API 服务
+bash webui.sh --api-only
 
-# 或手动执行（不推荐，缺少 MLflow 初始化）
+# 或手动执行（不推荐）
 uv sync
 uv run python main.py
 ```
 
-### MLflow 集成（可选）
+### MLflow 集成
 
-DSPyUI 集成了 MLflow 用于实验追踪和模型管理：
+DSPyUI 使用 Docker Compose 运行 MLflow 服务（包含 PostgreSQL + MinIO + MLflow Server）：
 
 ```bash
-# 方式 1：使用启动脚本自动启动 MLflow 服务器
-bash webui.sh --mlflow
+# 启动 MLflow 服务
+cd docker/docker-compose
+docker-compose up -d
 
-# 方式 2：手动启动 MLflow 服务器（在单独的终端中）
-bash webui.sh --mlflow-only
-# 然后在另一个终端启动 DSPyUI
-bash webui.sh
+# 查看服务状态
+docker-compose ps
 
-# 方式 3：使用外部 MLflow 服务器
-# 在 .env 文件中配置
-MLFLOW_ENABLED=true
-MLFLOW_TRACKING_URI=http://your-mlflow-server:5000
-MLFLOW_EXPERIMENT_NAME=dspyui-experiments
+# 停止服务
+docker-compose down
+
+# 停止并删除所有数据
+docker-compose down -v
 ```
 
-访问 `http://localhost:5000` 打开 MLflow UI，查看实验结果、比较运行记录和管理模型版本。
+访问服务：
+- **MLflow UI**: `http://localhost:5000` - 查看实验结果、比较运行记录和管理模型版本
+- **MinIO 控制台**: `http://localhost:9001` - 查看存储的模型工件（用户名: `minio`, 密码: `minio123`）
 
 **MLflow 功能特性：**
 - 📊 自动追踪编译参数和评估指标
 - 🏷️ 模型注册和版本管理
 - 📈 实验比较和可视化
 - 🔍 详细的 LLM 调用追踪
+- 💾 PostgreSQL 存储元数据
+- 📦 MinIO (S3 兼容) 存储模型工件
+
+**配置 MLflow**:
+
+在 `.env` 文件中：
+
+```bash
+# 启用 MLflow
+MLFLOW_ENABLED=true
+MLFLOW_TRACKING_URI=http://localhost:5000
+MLFLOW_EXPERIMENT_NAME=dspyui-experiments
+
+# 禁用 MLflow（如果不需要）
+MLFLOW_ENABLED=false
+```
 
 ## 🌍 语言选择
 
@@ -93,11 +116,11 @@ bash webui.sh --lang zh_CN
 # 英文界面
 bash webui.sh --lang en_US
 
-# 中文界面 + MLflow 服务器
-bash webui.sh --lang zh_CN --mlflow
+# 同时启动 API 服务
+bash webui.sh --api
 
-# 英文界面 + MLflow 服务器
-bash webui.sh --lang en_US --mlflow
+# 仅启动 API 服务
+bash webui.sh --api-only
 ```
 
 ### 方式 2：环境变量

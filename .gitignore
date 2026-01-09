@@ -180,5 +180,3 @@ dspy/
 CLAUDE.md
 dspy-docs.md
 .kiro
-mlartifacts
-mlflow_data

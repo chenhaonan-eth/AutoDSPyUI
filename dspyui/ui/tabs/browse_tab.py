@@ -169,19 +169,8 @@ def create_browse_tab() -> None:
         # MLflow 已注册模型区域
         if MLFLOW_ENABLED:
             with gr.Accordion(t("browse.mlflow.registered_models_title"), open=False):
-                refresh_models_btn = gr.Button(t("browse.mlflow.refresh_models"), size="sm")
-                registered_models_display = gr.Dataframe(
-                    headers=[
-                        t("browse.mlflow.model_table_headers.model_name"),
-                        t("browse.mlflow.model_table_headers.version"),
-                        t("browse.mlflow.model_table_headers.stage"),
-                        t("browse.mlflow.model_table_headers.evaluation_score"),
-                        t("browse.mlflow.model_table_headers.creation_time"),
-                        t("browse.mlflow.model_table_headers.run_id")
-                    ],
-                    interactive=False,
-                    wrap=True
-                )
+                gr.Markdown(t("browse.mlflow.load_models_hint") if "browse.mlflow.load_models_hint" in str(t("browse.mlflow")) else "点击下方按钮加载已注册的模型列表")
+                refresh_models_btn = gr.Button(t("browse.mlflow.refresh_models"), size="sm", variant="primary")
                 
                 def load_registered_models():
                     """加载已注册的模型列表"""
@@ -207,6 +196,19 @@ def create_browse_tab() -> None:
                     except Exception as e:
                         gr.Warning(f"加载模型列表失败: {str(e)}")
                         return []
+                
+                registered_models_display = gr.Dataframe(
+                    headers=[
+                        t("browse.mlflow.model_table_headers.model_name"),
+                        t("browse.mlflow.model_table_headers.version"),
+                        t("browse.mlflow.model_table_headers.stage"),
+                        t("browse.mlflow.model_table_headers.evaluation_score"),
+                        t("browse.mlflow.model_table_headers.creation_time"),
+                        t("browse.mlflow.model_table_headers.run_id")
+                    ],
+                    interactive=False,
+                    wrap=True
+                )
                 
                 
                 # 处理模型行选择以查看详情
@@ -266,11 +268,6 @@ def create_browse_tab() -> None:
                     inputs=[mlflow_models_state],
                     outputs=[selected_prompt, close_details_btn]
                 )
-
-                # 页面加载时自动加载模型列表
-                initial_models = load_registered_models()
-                registered_models_display.value = initial_models
-                mlflow_models_state.value = initial_models
         
         # 过滤和排序
         with gr.Row():

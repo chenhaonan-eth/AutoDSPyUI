@@ -3,18 +3,16 @@
 # Exit on error
 set -e
 
-# DSPyUI Web 界面启动脚本 - 支持语言选择和 MLflow 服务器
+# DSPyUI Web 界面启动脚本
 
 # 显示帮助信息
 show_help() {
     echo "DSPyUI 启动脚本"
     echo ""
     echo "用法:"
-    echo "  bash webui.sh                    # 默认启动 (含 MLflow)"
+    echo "  bash webui.sh                    # 启动 Gradio UI"
     echo "  bash webui.sh --lang zh_CN       # 使用中文启动"
     echo "  bash webui.sh --lang en_US       # 使用英文启动"
-    echo "  bash webui.sh --no-mlflow        # 不启动 MLflow 服务器"
-    echo "  bash webui.sh --mlflow-only      # 仅启动 MLflow 服务器"
     echo "  bash webui.sh --api              # 同时启动 Gradio UI 和 API 服务"
     echo "  bash webui.sh --api-only         # 仅启动 API 服务"
     echo "  bash webui.sh --help             # 显示此帮助信息"
@@ -23,26 +21,25 @@ show_help() {
     echo "  zh_CN  中文"
     echo "  en_US  English"
     echo ""
-    echo "MLflow 选项:"
-    echo "  --no-mlflow    不启动 MLflow 服务器 (默认会启动)"
-    echo "  --mlflow-only  仅启动 MLflow 服务器"
-    echo ""
     echo "API 服务选项:"
     echo "  --api          同时启动 Gradio UI 和 API 服务"
     echo "  --api-only     仅启动 API 服务 (不启动 Gradio UI)"
     echo "  --api-port     API 服务端口 (默认: 8000)"
     echo ""
+    echo "MLflow 服务:"
+    echo "  MLflow 现在通过 Docker Compose 运行"
+    echo "  启动命令: cd docker/docker-compose && docker-compose up -d"
+    echo "  停止命令: cd docker/docker-compose && docker-compose down"
+    echo ""
     echo "环境变量:"
     echo "  DSPYUI_LANGUAGE     设置界面语言"
     echo "  MLFLOW_ENABLED      启用/禁用 MLflow 追踪 (true/false)"
-    echo "  MLFLOW_TRACKING_URI MLflow 服务器地址"
+    echo "  MLFLOW_TRACKING_URI MLflow 服务器地址 (默认: http://localhost:5000)"
     echo "  API_HOST            API 服务监听地址 (默认: 0.0.0.0)"
     echo "  API_PORT            API 服务监听端口 (默认: 8000)"
 }
 
 # 默认参数
-START_MLFLOW=true
-MLFLOW_ONLY=false
 START_API=false
 API_ONLY=false
 API_PORT_ARG=""
@@ -70,17 +67,6 @@ while [[ $# -gt 0 ]]; do
                 show_help
                 exit 1
             fi
-            ;;
-        --no-mlflow)
-            START_MLFLOW=false
-            export MLFLOW_ENABLED=false
-            echo "将不启动 MLflow 服务器"
-            shift
-            ;;
-        --mlflow-only)
-            MLFLOW_ONLY=true
-            echo "仅启动 MLflow 服务器"
-            shift
             ;;
         --api)
             START_API=true
@@ -130,23 +116,6 @@ cleanup() {
         fi
     fi
     
-    # 停止 MLflow 服务器（如果由此脚本启动）
-    if [ -n "$MLFLOW_PID" ]; then
-        echo "停止 MLflow 服务器 (PID: $MLFLOW_PID)..."
-        kill -TERM "$MLFLOW_PID" 2>/dev/null || true
-        
-        # 额外确保杀掉该端口上的所有 mlflow 相关进程（防止 worker 残留）
-        if [ -n "$MLFLOW_PORT_ACTUAL" ]; then
-             echo "清理端口 $MLFLOW_PORT_ACTUAL 上的残留进程..."
-             pkill -f "mlflow server.*$MLFLOW_PORT_ACTUAL" 2>/dev/null || true
-        fi
-
-        sleep 1
-        if kill -0 "$MLFLOW_PID" 2>/dev/null; then
-            kill -KILL "$MLFLOW_PID" 2>/dev/null || true
-        fi
-    fi
-    
     echo "已退出 DSPyUI"
     exit
 }
@@ -163,54 +132,48 @@ find_available_port() {
     echo $port
 }
 
-# 启动 MLflow 服务器的函数
-start_mlflow_server() {
-    echo "检查 MLflow 服务器端口..."
+# 检查 Docker MLflow 服务是否运行
+check_mlflow_docker() {
+    echo "检查 MLflow Docker 服务..."
     
-    # 查找起始端口 5000 的可用端口
-    MLFLOW_PORT=$(find_available_port 5000)
+    # 获取 MLflow URI，默认为 localhost:5000
+    MLFLOW_URI=${MLFLOW_TRACKING_URI:-"http://localhost:5000"}
     
-    echo "将在端口 $MLFLOW_PORT 上启动 MLflow 服务器..."
+    # 提取主机和端口
+    MLFLOW_HOST=$(echo $MLFLOW_URI | sed -E 's|https?://([^:/]+).*|\1|')
+    MLFLOW_PORT=$(echo $MLFLOW_URI | sed -E 's|https?://[^:]+:([0-9]+).*|\1|')
     
-    # 在后台启动 MLflow 服务器
-    # 使用环境变量配置存储路径，如果未设置则使用默认值
-    BACKEND_STORE_URI=${MLFLOW_BACKEND_STORE_URI:-"sqlite:///data/mlflow.db"}
-    ARTIFACT_ROOT=${MLFLOW_ARTIFACT_ROOT:-"./mlartifacts"}
+    # 如果没有提取到端口，使用默认值
+    if [ "$MLFLOW_PORT" = "$MLFLOW_URI" ]; then
+        MLFLOW_PORT=5000
+    fi
     
-    echo "使用后端存储: $BACKEND_STORE_URI"
-    echo "使用工件根目录: $ARTIFACT_ROOT"
-
-    # 日志文件路径，默认放在 data 目录
-    MLFLOW_LOG_FILE=${MLFLOW_LOG_FILE:-"data/mlflow.log"}
-    mkdir -p "$(dirname "$MLFLOW_LOG_FILE")"
-    echo "MLflow 日志文件: $MLFLOW_LOG_FILE"
-
-    uv run mlflow server \
-        --host 0.0.0.0 \
-        --port $MLFLOW_PORT \
-        --backend-store-uri "$BACKEND_STORE_URI" \
-        --default-artifact-root "$ARTIFACT_ROOT" > "$MLFLOW_LOG_FILE" 2>&1 &
-    MLFLOW_PID=$!
-    
-    echo "MLflow 服务器已启动 (PID: $MLFLOW_PID)"
-    echo "等待 MLflow 服务器就绪..."
-    
-    # 等待服务器启动（最多等待 30 秒）
-    for i in {1..30}; do
-        if curl -s http://localhost:$MLFLOW_PORT/health >/dev/null 2>&1; then
-            echo "✅ MLflow 服务器已就绪: http://localhost:$MLFLOW_PORT"
-            # 导出端口供后续使用
-            export MLFLOW_PORT_ACTUAL=$MLFLOW_PORT
-            return 0
+    # 检查 MLflow 是否可访问
+    if curl -s -f "$MLFLOW_URI/health" >/dev/null 2>&1; then
+        echo "✅ MLflow 服务运行正常: $MLFLOW_URI"
+        return 0
+    else
+        echo "⚠️  警告: 无法连接到 MLflow 服务 ($MLFLOW_URI)"
+        echo ""
+        echo "请确保 MLflow Docker 服务已启动:"
+        echo "  cd docker/docker-compose"
+        echo "  docker-compose up -d"
+        echo ""
+        echo "或者在 .env 中设置 MLFLOW_ENABLED=false 禁用 MLflow"
+        echo ""
+        
+        # 询问用户是否继续
+        read -p "是否继续启动 DSPyUI? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
         fi
-        sleep 1
-        echo -n "."
-    done
-    
-    echo ""
-    echo "⚠️  MLflow 服务器启动可能需要更多时间，请稍后访问 http://localhost:$MLFLOW_PORT"
-    export MLFLOW_PORT_ACTUAL=$MLFLOW_PORT
-    return 0
+        
+        # 禁用 MLflow
+        export MLFLOW_ENABLED=false
+        echo "已禁用 MLflow 集成"
+        return 1
+    fi
 }
 
 # 启动 API 服务器的函数
@@ -262,78 +225,12 @@ start_api_server() {
     return 0
 }
 
-# 如果只启动 MLflow 服务器
-if [ "$MLFLOW_ONLY" = true ]; then
-    start_mlflow_server
-    echo ""
-    echo "MLflow 服务器正在运行，按 Ctrl+C 停止"
-    echo "访问 http://localhost:$MLFLOW_PORT_ACTUAL 查看 MLflow UI"
-    
-    # 等待用户中断
-    while true; do
-        sleep 1
-    done
-fi
-
-# 如果只启动 API 服务器
-if [ "$API_ONLY" = true ]; then
-    # 如果需要 MLflow，先启动它
-    if [ "$START_MLFLOW" = true ]; then
-        start_mlflow_server
-        export MLFLOW_ENABLED=true
-        export MLFLOW_TRACKING_URI="http://localhost:$MLFLOW_PORT_ACTUAL"
-        export MLFLOW_UI_BASE_URL="http://localhost:$MLFLOW_PORT_ACTUAL"
-        echo "MLflow Tracking URI set to: $MLFLOW_TRACKING_URI"
-        echo ""
-    fi
-    
-    # 检查 serve.py 是否存在
-    if [ ! -f serve.py ]; then
-        echo "serve.py 文件不存在，请确保文件在当前目录中"
-        exit 1
-    fi
-    
-    # 确定 API 端口
-    if [ -n "$API_PORT_ARG" ]; then
-        API_PORT=$API_PORT_ARG
-    else
-        API_PORT=${API_PORT:-8000}
-    fi
-    
-    echo ""
-    echo "API 服务器正在启动..."
-    echo "访问 http://localhost:$API_PORT 使用 API"
-    echo "访问 http://localhost:$API_PORT/docs 查看 API 文档"
-    if [ "$START_MLFLOW" = true ]; then
-        echo "访问 http://localhost:$MLFLOW_PORT_ACTUAL 查看 MLflow UI"
-    fi
-    echo "按 Ctrl+C 停止"
-    echo ""
-    
-    # 前台运行 API 服务器
-    uv run python serve.py --port $API_PORT --log-level info
-    exit 0
-fi
-
-# Check if uv is installed
-if ! command -v uv &> /dev/null; then
-    echo "uv 未安装，正在安装 uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    # Reload shell to get uv in PATH
-    export PATH="$HOME/.cargo/bin:$PATH"
-fi
-
-
-# Sync dependencies using uv
-echo "使用 uv 同步依赖..."
-uv sync
-
 # Function to stop existing DSPy UI processes
 stop_existing_processes() {
     echo "检查现有 DSPy UI 进程..."
     
     # 使用 pgrep 查找运行 main.py 的进程，避开当前脚本进程
-    PIDS=$(pgrep -f "python.*main.py" | grep -v "^$$$" || true)
+    PIDS=$(pgrep -f "python.*main.py" | grep -v "^$$" || true)
     
     if [ -n "$PIDS" ]; then
         echo "发现现有 DSPy UI 进程，正在停止..."
@@ -354,31 +251,58 @@ stop_existing_processes() {
     else
         echo "未发现现有 DSPy UI 进程"
     fi
-
-    # 检查是否有残留的 MLflow 进程（特别是如果我们要启动一个新的）
-    if [ "$START_MLFLOW" = true ] || [ "$MLFLOW_ONLY" = true ]; then
-        echo "检查现有 MLflow 进程..."
-        # 查找 mlflow server 进程
-        MLFLOW_PIDS=$(pgrep -f "mlflow server" | grep -v "^$$$" || true)
-        if [ -n "$MLFLOW_PIDS" ]; then
-            echo "发现现有 MLflow 进程，正在停止以避免冲突..."
-            for PID in $MLFLOW_PIDS; do
-                kill -TERM "$PID" 2>/dev/null || true
-            done
-            sleep 1
-        fi
-    fi
 }
 
-# 如果需要启动 MLflow 服务器
-if [ "$START_MLFLOW" = true ]; then
-    start_mlflow_server
-    # 强制启用 MLflow 追踪，覆盖 .env 中的设置
-    export MLFLOW_ENABLED=true
-    export MLFLOW_TRACKING_URI="http://localhost:$MLFLOW_PORT_ACTUAL"
-    export MLFLOW_UI_BASE_URL="http://localhost:$MLFLOW_PORT_ACTUAL"
-    echo "MLflow Tracking URI set to: $MLFLOW_TRACKING_URI"
+# 如果只启动 API 服务器
+if [ "$API_ONLY" = true ]; then
+    # 检查 MLflow 服务（如果启用）
+    if [ "${MLFLOW_ENABLED:-true}" = "true" ]; then
+        check_mlflow_docker
+    fi
+    
+    # 检查 serve.py 是否存在
+    if [ ! -f serve.py ]; then
+        echo "serve.py 文件不存在，请确保文件在当前目录中"
+        exit 1
+    fi
+    
+    # 确定 API 端口
+    if [ -n "$API_PORT_ARG" ]; then
+        API_PORT=$API_PORT_ARG
+    else
+        API_PORT=${API_PORT:-8000}
+    fi
+    
     echo ""
+    echo "API 服务器正在启动..."
+    echo "访问 http://localhost:$API_PORT 使用 API"
+    echo "访问 http://localhost:$API_PORT/docs 查看 API 文档"
+    if [ "${MLFLOW_ENABLED:-true}" = "true" ]; then
+        echo "访问 ${MLFLOW_TRACKING_URI:-http://localhost:5000} 查看 MLflow UI"
+    fi
+    echo "按 Ctrl+C 停止"
+    echo ""
+    
+    # 前台运行 API 服务器
+    uv run python serve.py --port $API_PORT --log-level info
+    exit 0
+fi
+
+# Check if uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "uv 未安装，正在安装 uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Reload shell to get uv in PATH
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+# Sync dependencies using uv
+echo "使用 uv 同步依赖..."
+uv sync
+
+# 检查 MLflow 服务（如果启用）
+if [ "${MLFLOW_ENABLED:-true}" = "true" ]; then
+    check_mlflow_docker
 fi
 
 # Stop any existing DSPy UI processes
@@ -388,14 +312,6 @@ stop_existing_processes
 if [ ! -f main.py ]; then
     echo "main.py 文件不存在，请确保文件在当前目录中"
     exit 1
-fi
-
-# Launch the Gradio app using uv run
-echo "启动 DSPyUI..."
-echo "当前语言设置: ${DSPYUI_LANGUAGE:-zh_CN}"
-
-if [ "$START_MLFLOW" = true ]; then
-    echo "MLflow UI: http://localhost:$MLFLOW_PORT_ACTUAL"
 fi
 
 # 如果需要同时启动 API 服务器
@@ -408,6 +324,14 @@ if [ "$START_API" = true ]; then
     start_api_server
     echo "API 服务: http://localhost:$API_PORT_ACTUAL"
     echo "API 文档: http://localhost:$API_PORT_ACTUAL/docs"
+fi
+
+# Launch the Gradio app using uv run
+echo "启动 DSPyUI..."
+echo "当前语言设置: ${DSPYUI_LANGUAGE:-zh_CN}"
+
+if [ "${MLFLOW_ENABLED:-true}" = "true" ]; then
+    echo "MLflow UI: ${MLFLOW_TRACKING_URI:-http://localhost:5000}"
 fi
 
 echo "DSPyUI 启动中..."
