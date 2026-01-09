@@ -2,16 +2,18 @@
 MLflow 模型注册管理
 
 INPUT:  MLflow Run ID, 模型元数据
-OUTPUT: register_model(), transition_model_stage() 函数
+OUTPUT: register_model(), set_model_alias(), delete_model_alias(), 
+        transition_model_stage() (deprecated) 函数
 POS:    负责"写入" Model Registry 的操作，被 mlflow_service.py 和 browse_tab.py 调用
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
 """
 
 import logging
+import warnings
 from typing import Any, Dict, Optional
 
-from dspyui.config import MLFLOW_ENABLED
+from autodspy.config import get_config
 
 # 可选导入 MLflow
 try:
@@ -74,7 +76,8 @@ def register_model(
         ...     }
         ... )
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return None
     
     try:
@@ -152,6 +155,78 @@ def register_model(
         return None
 
 
+def list_registered_models(filter_string: Optional[str] = None) -> list:
+    """
+    列出所有注册的模型。
+    
+    Args:
+        filter_string: 可选的过滤条件，如 "name='model-name'"
+        
+    Returns:
+        注册模型列表，如果 MLflow 禁用则返回空列表
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
+        return []
+    
+    try:
+        if filter_string:
+            return mlflow.search_registered_models(filter_string=filter_string)
+        return mlflow.search_registered_models()
+    except Exception as e:
+        logger.warning(f"列出注册模型失败: {e}")
+        return []
+
+
+def list_model_versions(model_name: str, stage: Optional[str] = None) -> list:
+    """
+    列出指定模型的所有版本。
+    
+    Args:
+        model_name: 模型名称
+        stage: 可选的阶段过滤，如 "Production", "Staging"
+        
+    Returns:
+        模型版本列表，如果 MLflow 禁用则返回空列表
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
+        return []
+    
+    try:
+        client = MlflowClient()
+        filter_string = f"name='{model_name}'"
+        if stage:
+            filter_string += f" and current_stage='{stage}'"
+        return client.search_model_versions(filter_string=filter_string)
+    except Exception as e:
+        logger.warning(f"列出模型版本失败: {e}")
+        return []
+
+
+def get_model_metadata(model_name: str, version: str) -> Optional[Any]:
+    """
+    获取指定模型版本的元数据。
+    
+    Args:
+        model_name: 模型名称
+        version: 模型版本号
+        
+    Returns:
+        模型版本对象，如果不存在或 MLflow 禁用则返回 None
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
+        return None
+    
+    try:
+        client = MlflowClient()
+        return client.get_model_version(name=model_name, version=version)
+    except Exception as e:
+        logger.warning(f"获取模型元数据失败: {e}")
+        return None
+
+
 def transition_model_stage(
     model_name: str,
     version: str,
@@ -160,6 +235,11 @@ def transition_model_stage(
 ) -> bool:
     """
     更新模型版本的阶段。
+    
+    .. deprecated:: 0.2.0
+        MLflow 2.9.0 起废弃 Stage API，请使用 `set_model_alias()` 替代。
+        - "Production" -> set_model_alias(model_name, "champion", version)
+        - "Staging" -> set_model_alias(model_name, "challenger", version)
     
     Args:
         model_name: 模型名称
@@ -173,45 +253,112 @@ def transition_model_stage(
         
     Returns:
         是否成功更新
-        
-    Example:
-        >>> transition_model_stage("joke-generator", "1", "Staging")
-        True
-        >>> transition_model_stage("joke-generator", "2", "Production", archive_existing=True)
-        True
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    warnings.warn(
+        "transition_model_stage() 已废弃，MLflow 2.9.0 起推荐使用 set_model_alias()。"
+        "例如: set_model_alias(model_name, 'champion', version) 替代 stage='Production'",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return False
     
-    valid_stages = {"Staging", "Production", "Archived", "None"}
-    if stage not in valid_stages:
-        logger.error(f"无效的阶段: {stage}，有效值为: {valid_stages}")
+    # 将 Stage 映射到 Alias
+    stage_to_alias = {
+        "Production": "champion",
+        "Staging": "challenger",
+    }
+    
+    if stage in stage_to_alias:
+        return set_model_alias(model_name, stage_to_alias[stage], version)
+    elif stage == "Archived" or stage == "None":
+        # 对于 Archived/None，删除所有别名
+        try:
+            client = MlflowClient()
+            model_version = client.get_model_version(name=model_name, version=version)
+            if hasattr(model_version, 'aliases') and model_version.aliases:
+                for alias in model_version.aliases:
+                    delete_model_alias(model_name, alias)
+            logger.info(f"已清除模型 {model_name} 版本 {version} 的所有别名")
+            return True
+        except Exception as e:
+            logger.warning(f"清除模型别名失败: {e}")
+            return False
+    else:
+        logger.error(f"无效的阶段: {stage}")
+        return False
+
+
+def set_model_alias(
+    model_name: str,
+    alias: str,
+    version: str
+) -> bool:
+    """
+    为模型版本设置别名。
+    
+    别名是 MLflow 2.9.0+ 推荐的模型版本管理方式，替代废弃的 Stage API。
+    
+    Args:
+        model_name: 模型名称
+        alias: 别名（如 "champion", "challenger"）
+        version: 模型版本号
+        
+    Returns:
+        是否成功设置
+        
+    Example:
+        >>> set_model_alias("joke-generator", "champion", "2")
+        True
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return False
     
     try:
         client = MlflowClient()
-        
-        # 执行阶段转换
-        client.transition_model_version_stage(
+        client.set_registered_model_alias(
             name=model_name,
-            version=version,
-            stage=stage,
-            archive_existing_versions=archive_existing
+            alias=alias,
+            version=version
         )
-        
-        logger.info(f"已更新模型 {model_name} 版本 {version} 到阶段 {stage}")
-        
-        # 验证转换是否成功
-        updated_version = client.get_model_version(name=model_name, version=version)
-        if updated_version.current_stage == stage:
-            logger.debug(f"阶段转换验证成功: {updated_version.current_stage}")
-            return True
-        else:
-            logger.warning(
-                f"阶段转换可能未完全生效: 期望 {stage}, 实际 {updated_version.current_stage}"
-            )
-            return True  # API 调用成功，但状态可能有延迟
+        logger.info(f"已设置模型 {model_name} 版本 {version} 的别名: @{alias}")
+        return True
         
     except Exception as e:
-        logger.warning(f"模型阶段转换失败: {e}")
+        logger.warning(f"设置模型别名失败: {e}")
+        return False
+
+
+def delete_model_alias(
+    model_name: str,
+    alias: str
+) -> bool:
+    """
+    删除模型的别名。
+    
+    Args:
+        model_name: 模型名称
+        alias: 要删除的别名
+        
+    Returns:
+        是否成功删除
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
+        return False
+    
+    try:
+        client = MlflowClient()
+        client.delete_registered_model_alias(
+            name=model_name,
+            alias=alias
+        )
+        logger.info(f"已删除模型 {model_name} 的别名: @{alias}")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"删除模型别名失败: {e}")
         return False

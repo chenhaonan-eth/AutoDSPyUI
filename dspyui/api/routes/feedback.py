@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from dspyui.api.dependencies import get_feedback_service
 from dspyui.api.schemas import FeedbackRequest, FeedbackResponse
-from dspyui.core.feedback import FeedbackService
+from autodspy import FeedbackService
 
 logger = logging.getLogger(__name__)
 

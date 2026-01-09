@@ -1,0 +1,36 @@
+# Auto-DSPy-Core 配置文件示例
+# 复制此文件为 autodspy-config.yaml 并根据需要修改
+
+dspy:
+  cache_enabled: true
+  num_threads: 4
+
+optimizer:
+  mipro:
+    num_candidates: 10
+    init_temperature: 1.0
+    num_batches: 30
+    max_bootstrapped_demos: 8
+    max_labeled_demos: 16
+  
+  bootstrap:
+    max_bootstrapped_demos: 4
+    max_labeled_demos: 4
+
+mlflow:
+  enabled: true
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "autodspy-experiments"
+  ui_base_url: ""
+  
+  autolog:
+    log_traces: true
+    log_traces_from_compile: false
+    log_traces_from_eval: true
+    log_compiles: true
+    log_evals: true
+
+serving:
+  model_cache_enabled: true
+  model_cache_ttl: 3600
+  feedback_enabled: true

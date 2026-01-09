@@ -1,7 +1,7 @@
 """
 Browse Prompts Tab
 
-INPUT:  dspyui.utils.file_ops, gradio
+INPUT:  autodspy (register_model, get_mlflow_ui_url, get_registered_run_ids, load_prompt_artifact, register_compiled_model), dspyui.utils.file_ops, gradio
 OUTPUT: create_browse_tab() 函数
 POS:    浏览提示词 Tab，展示已保存的提示词列表
 
@@ -15,9 +15,7 @@ import gradio as gr
 
 from dspyui.utils.file_ops import list_prompts
 from dspyui.config import MLFLOW_ENABLED
-from dspyui.core.mlflow_registry import register_model
-from dspyui.core.mlflow_tracking import get_mlflow_ui_url
-from dspyui.core.mlflow_loader import get_registered_run_ids
+from autodspy import register_model, get_mlflow_ui_url, get_registered_run_ids
 from dspyui.i18n import t
 
 
@@ -116,7 +114,7 @@ def create_browse_tab() -> None:
                                     
                                     def register_model_action(model_name, prompt_details):
                                         """注册模型到 MLflow Model Registry"""
-                                        from dspyui.core.mlflow_service import register_compiled_model
+                                        from autodspy import register_compiled_model
                                         
                                         run_id = prompt_details.get('mlflow_run_id')
                                         
@@ -214,7 +212,7 @@ def create_browse_tab() -> None:
                 # 处理模型行选择以查看详情
                 def on_model_select(evt: gr.SelectData):
                     """当选择模型行时，加载其提示词详情并显示"""
-                    from dspyui.core.mlflow_loader import load_prompt_artifact
+                    from autodspy import load_prompt_artifact
                     
                     # 获取选择的行为数据
                     # evt.index 是 (row, col)
@@ -247,7 +245,7 @@ def create_browse_tab() -> None:
                     selected_row = models_list[row_index]
                     run_id = selected_row[5] # Run ID 是最后一列
                     
-                    from dspyui.core.mlflow_loader import load_prompt_artifact
+                    from autodspy import load_prompt_artifact
                     prompt_data = load_prompt_artifact(run_id)
                     
                     if prompt_data:

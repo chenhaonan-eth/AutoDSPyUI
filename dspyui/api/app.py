@@ -27,9 +27,7 @@ from dspyui.api.routes import (
     predict_router,
 )
 from dspyui.config import MLFLOW_ENABLED, get_api_config
-from dspyui.core.data_exporter import DataExporter
-from dspyui.core.feedback import FeedbackService
-from dspyui.core.model_manager import ModelManager
+from autodspy import DataExporter, FeedbackService, ModelManager
 
 # 可选导入
 try:

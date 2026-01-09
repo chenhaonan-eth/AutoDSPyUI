@@ -1,7 +1,7 @@
 """
 DSPyUI 应用入口
 
-INPUT:  dspyui.ui.app, dspyui.core.mlflow_tracking
+INPUT:  dspyui.ui.app, autodspy (init_mlflow)
 OUTPUT: main() 函数，启动 Gradio 应用
 POS:    应用程序入口点，负责初始化 MLflow 并启动 Web 界面
 
@@ -11,7 +11,7 @@ POS:    应用程序入口点，负责初始化 MLflow 并启动 Web 界面
 import logging
 from dspyui.ui.app import demo
 from dspyui.ui.styles import CUSTOM_CSS
-from dspyui.core.mlflow_tracking import init_mlflow
+from autodspy import init_mlflow
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)

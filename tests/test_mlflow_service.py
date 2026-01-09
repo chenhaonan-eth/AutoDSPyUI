@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from dspyui.core.mlflow_service import register_compiled_model, validate_model_name, ModelRegistrationResult
+from autodspy import register_compiled_model, ModelRegistrationResult
+from autodspy.mlflow.service import validate_model_name
 
 class TestMLflowService(unittest.TestCase):
     
@@ -18,21 +19,21 @@ class TestMLflowService(unittest.TestCase):
         self.assertTrue(is_valid)
         self.assertIsNone(error_code)
 
-    @patch('dspyui.core.mlflow_service.MLFLOW_ENABLED', False)
+    @patch('autodspy.mlflow.service.MLFLOW_ENABLED', False)
     def test_register_disabled_mlflow(self):
         result = register_compiled_model("run_id", "name", {})
         self.assertFalse(result.success)
         self.assertEqual(result.error_code, "mlflow_disabled")
 
-    @patch('dspyui.core.mlflow_service.MLFLOW_ENABLED', True)
+    @patch('autodspy.mlflow.service.MLFLOW_ENABLED', True)
     def test_register_no_run_id(self):
         result = register_compiled_model(None, "name", {})
         self.assertFalse(result.success)
         self.assertEqual(result.error_code, "no_run_id")
 
-    @patch('dspyui.core.mlflow_service.MLFLOW_ENABLED', True)
-    @patch('dspyui.core.mlflow_service.register_model')
-    @patch('dspyui.core.mlflow_service.get_mlflow_ui_url')
+    @patch('autodspy.mlflow.service.MLFLOW_ENABLED', True)
+    @patch('autodspy.mlflow.service.register_model')
+    @patch('autodspy.mlflow.service.get_mlflow_ui_url')
     def test_register_success(self, mock_url, mock_register):
         mock_register.return_value = "1"
         mock_url.return_value = "http://mlflow/model/1"
@@ -51,8 +52,8 @@ class TestMLflowService(unittest.TestCase):
         self.assertEqual(result.model_url, "http://mlflow/model/1")
         mock_register.assert_called_once()
 
-    @patch('dspyui.core.mlflow_service.MLFLOW_ENABLED', True)
-    @patch('dspyui.core.mlflow_service.register_model')
+    @patch('autodspy.mlflow.service.MLFLOW_ENABLED', True)
+    @patch('autodspy.mlflow.service.register_model')
     def test_register_failure_api(self, mock_register):
         mock_register.return_value = None
         
@@ -60,8 +61,8 @@ class TestMLflowService(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertEqual(result.error_code, "registration_failed")
 
-    @patch('dspyui.core.mlflow_service.MLFLOW_ENABLED', True)
-    @patch('dspyui.core.mlflow_service.register_model')
+    @patch('autodspy.mlflow.service.MLFLOW_ENABLED', True)
+    @patch('autodspy.mlflow.service.register_model')
     def test_register_exception(self, mock_register):
         mock_register.side_effect = Exception("MLflow error")
         

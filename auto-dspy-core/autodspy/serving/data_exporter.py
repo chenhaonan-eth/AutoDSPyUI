@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterator, List, Literal, Optional
 
 import pandas as pd
 
-from dspyui.config import MLFLOW_ENABLED
+from autodspy.config import get_config
 
 # 可选导入 MLflow
 try:
@@ -55,7 +55,7 @@ class DataExporter:
     
     def _is_available(self) -> bool:
         """检查 MLflow 是否可用"""
-        return MLFLOW_ENABLED and MLFLOW_INSTALLED
+        return get_config().mlflow_enabled and MLFLOW_INSTALLED
     
     def query_traces_with_feedback(
         self,

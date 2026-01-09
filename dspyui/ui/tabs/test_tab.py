@@ -1,7 +1,7 @@
 """
 Test Model Tab
 
-INPUT:  dspyui.core.mlflow_loader, dspyui.core.runner, gradio
+INPUT:  autodspy (list_registered_models, list_model_versions, get_model_metadata, generate_response_from_mlflow, run_batch_inference_from_mlflow), gradio
 OUTPUT: create_test_tab() 函数
 POS:    测试 Tab，提供从 MLflow 加载模型进行测试的界面
 
@@ -14,12 +14,12 @@ import gradio as gr
 import pandas as pd
 
 from dspyui.config import MLFLOW_ENABLED, LLM_OPTIONS
-from dspyui.core.mlflow_loader import (
+from autodspy import (
     list_registered_models,
     list_model_versions,
     get_model_metadata,
 )
-from dspyui.core.runner import (
+from autodspy.dspy_core.runner import (
     generate_response_from_mlflow,
     run_batch_inference_from_mlflow,
 )

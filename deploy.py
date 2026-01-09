@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from dspyui.core.mlflow_loader import load_model_from_registry, load_model_from_run
+from autodspy import load_model_from_registry, load_model_from_run
 from dspyui.config import MLFLOW_TRACKING_URI, MLFLOW_ENABLED
 
 # Configure Logging

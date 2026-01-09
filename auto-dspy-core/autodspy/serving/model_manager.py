@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import dspy
 
-from dspyui.config import MLFLOW_ENABLED
+from autodspy.config import get_config
 
 # 可选导入 MLflow
 try:
@@ -172,7 +172,8 @@ class ModelManager:
         Returns:
             实际版本号，如果无法解析返回 None
         """
-        if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+        config = get_config()
+        if not config.mlflow_enabled or not MLFLOW_INSTALLED:
             return None
             
         try:
@@ -212,7 +213,8 @@ class ModelManager:
         Raises:
             ValueError: 加载失败时
         """
-        if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+        config = get_config()
+        if not config.mlflow_enabled or not MLFLOW_INSTALLED:
             raise ValueError("MLflow 未启用或未安装")
         
         logger.info(f"正在从 MLflow 加载模型: {model_uri}")

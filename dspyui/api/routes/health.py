@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Request
 from dspyui.api.dependencies import get_model_manager
 from dspyui.api.schemas import HealthResponse, MetricsResponse
 from dspyui.config import MLFLOW_ENABLED
-from dspyui.core.model_manager import ModelManager
+from autodspy import ModelManager
 
 # 可选导入 MLflow
 try:

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from dspyui.config import MLFLOW_ENABLED
+from autodspy.config import get_config
 
 # 可选导入 MLflow
 try:
@@ -82,7 +82,7 @@ class FeedbackService:
     
     def _is_available(self) -> bool:
         """检查 MLflow 是否可用"""
-        return MLFLOW_ENABLED and MLFLOW_INSTALLED and self._feedback_enabled
+        return get_config().mlflow_enabled and MLFLOW_INSTALLED and self._feedback_enabled
     
     def validate_trace_exists(self, trace_id: str) -> bool:
         """

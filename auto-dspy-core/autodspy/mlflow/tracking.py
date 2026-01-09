@@ -4,8 +4,9 @@ MLflow 追踪模块
 INPUT:  config.py 中的 MLflow 配置, 编译/运行参数
 OUTPUT: init_mlflow(), truncate_param(), track_compilation(), log_compilation_metrics(), 
         log_compilation_artifacts(), log_dspy_model(), log_evaluation_table(), compute_dataset_hash(),
-        log_dataset_metadata(), register_model(), transition_model_stage(), 
-        get_mlflow_ui_url(), _get_experiment_id_for_run(), _serialize_value() 函数
+        log_dataset_metadata(), register_model(), set_model_alias(), delete_model_alias(),
+        transition_model_stage() (deprecated), get_mlflow_ui_url(), _get_experiment_id_for_run(), 
+        _serialize_value() 函数
 POS:    MLflow 集成的核心模块，被 compiler.py 和 runner.py 调用
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
@@ -16,20 +17,11 @@ import hashlib
 import logging
 import json
 import statistics
+import warnings
 from typing import Dict, Any, Optional, List, Generator
 from contextlib import contextmanager
 
-from dspyui.config import (
-    MLFLOW_ENABLED,
-    MLFLOW_TRACKING_URI,
-    MLFLOW_EXPERIMENT_NAME,
-    MLFLOW_UI_BASE_URL,
-    MLFLOW_LOG_TRACES,
-    MLFLOW_LOG_TRACES_FROM_COMPILE,
-    MLFLOW_LOG_TRACES_FROM_EVAL,
-    MLFLOW_LOG_COMPILES,
-    MLFLOW_LOG_EVALS,
-)
+from autodspy.config import get_config
 
 # 可选导入 MLflow
 try:
@@ -82,18 +74,19 @@ def is_mlflow_available(timeout: float = 1.0) -> bool:
     Returns:
         bool: 服务器是否可用
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return False
         
     # 本地 SQLite / File 存储始终认为可用
-    if MLFLOW_TRACKING_URI.startswith("sqlite") or MLFLOW_TRACKING_URI.startswith("file"):
+    if config.mlflow_tracking_uri.startswith("sqlite") or config.mlflow_tracking_uri.startswith("file"):
         return True
     
     # HTTP/HTTPS 需要发送请求确认
     try:
         import requests
         # 发送简单的 GET 请求，带上短超时
-        response = requests.get(MLFLOW_TRACKING_URI, timeout=timeout)
+        response = requests.get(config.mlflow_tracking_uri, timeout=timeout)
         # 只要不是 5xx 错误，通常认为 API 服务是存在的
         return response.status_code < 500
     except Exception:
@@ -105,13 +98,15 @@ def init_mlflow() -> bool:
     初始化 MLflow 配置和 DSPy autolog。
     
     根据配置设置 MLflow tracking URI、experiment，并启用 DSPy autolog。
-    如果 MLFLOW_ENABLED 为 False，则禁用 autolog 并跳过所有追踪操作。
+    如果 mlflow_enabled 为 False，则禁用 autolog 并跳过所有追踪操作。
     
     Returns:
         bool: 是否成功初始化。如果 MLflow 被禁用或初始化失败，返回 False。
     """
-    if not MLFLOW_ENABLED:
-        logger.info("MLflow 追踪已禁用 (MLFLOW_ENABLED=false)")
+    config = get_config()
+    
+    if not config.mlflow_enabled:
+        logger.info("MLflow 追踪已禁用 (mlflow_enabled=false)")
         if MLFLOW_INSTALLED:
             try:
                 mlflow.dspy.autolog(disable=True)
@@ -125,33 +120,33 @@ def init_mlflow() -> bool:
     
     # 增加可用性检查，防止连接失败导致脚本卡死
     if not is_mlflow_available(timeout=1.0):
-        logger.warning(f"MLflow 服务器连接失败 ({MLFLOW_TRACKING_URI})，将禁用本轮追踪")
+        logger.warning(f"MLflow 服务器连接失败 ({config.mlflow_tracking_uri})，将禁用本轮追踪")
         return False
     
     try:
         # 设置 tracking URI
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        logger.info(f"MLflow tracking URI: {MLFLOW_TRACKING_URI}")
+        mlflow.set_tracking_uri(config.mlflow_tracking_uri)
+        logger.info(f"MLflow tracking URI: {config.mlflow_tracking_uri}")
         
         # 设置或创建 experiment
-        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
-        logger.info(f"MLflow experiment: {MLFLOW_EXPERIMENT_NAME}")
+        mlflow.set_experiment(config.mlflow_experiment_name)
+        logger.info(f"MLflow experiment: {config.mlflow_experiment_name}")
         
         # 启用 DSPy autolog
         mlflow.dspy.autolog(
-            log_traces=MLFLOW_LOG_TRACES,
-            log_traces_from_compile=MLFLOW_LOG_TRACES_FROM_COMPILE,
-            log_traces_from_eval=MLFLOW_LOG_TRACES_FROM_EVAL,
-            log_compiles=MLFLOW_LOG_COMPILES,
-            log_evals=MLFLOW_LOG_EVALS,
+            log_traces=config.mlflow_log_traces,
+            log_traces_from_compile=config.mlflow_log_traces_from_compile,
+            log_traces_from_eval=config.mlflow_log_traces_from_eval,
+            log_compiles=config.mlflow_log_compiles,
+            log_evals=config.mlflow_log_evals,
         )
         logger.info(
             f"MLflow DSPy autolog 已启用: "
-            f"log_traces={MLFLOW_LOG_TRACES}, "
-            f"log_traces_from_compile={MLFLOW_LOG_TRACES_FROM_COMPILE}, "
-            f"log_traces_from_eval={MLFLOW_LOG_TRACES_FROM_EVAL}, "
-            f"log_compiles={MLFLOW_LOG_COMPILES}, "
-            f"log_evals={MLFLOW_LOG_EVALS}"
+            f"log_traces={config.mlflow_log_traces}, "
+            f"log_traces_from_compile={config.mlflow_log_traces_from_compile}, "
+            f"log_traces_from_eval={config.mlflow_log_traces_from_eval}, "
+            f"log_compiles={config.mlflow_log_compiles}, "
+            f"log_evals={config.mlflow_log_evals}"
         )
         
         return True
@@ -190,7 +185,8 @@ def track_compilation(
         ...     if run:
         ...         print(f"Run ID: {run.info.run_id}")
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         yield None
         return
     
@@ -235,7 +231,8 @@ def log_compilation_metrics(
         trainset_size: 训练集大小
         devset_size: 验证集大小
     """
-    if not MLFLOW_ENABLED:
+    config = get_config()
+    if not config.mlflow_enabled:
         return
     
     try:
@@ -277,7 +274,8 @@ def log_compilation_artifacts(
         prompt_path: 优化后提示词 JSON 文件路径（可选）
         dataset_path: 数据集 CSV 文件路径（可选）
     """
-    if not MLFLOW_ENABLED:
+    config = get_config()
+    if not config.mlflow_enabled:
         return
     
     try:
@@ -325,7 +323,8 @@ def log_dspy_model(
         compiled_program: 编译后的 DSPy 程序对象
         artifact_path: 工件路径，默认为 "program"
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return
     
     try:
@@ -375,7 +374,8 @@ def log_evaluation_table(
         - 如果 eval_results 中的记录缺少 metric_name，将使用参数中的 metric_name
         - 聚合指标 (mean, std) 将记录到 MLflow metrics
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return
     
     if not eval_results:
@@ -508,7 +508,8 @@ def log_dataset_metadata(
         data: pandas DataFrame 数据集
         dataset_name: 数据集名称，用于参数前缀
     """
-    if not MLFLOW_ENABLED:
+    config = get_config()
+    if not config.mlflow_enabled:
         return
     
     try:
@@ -573,7 +574,8 @@ def register_model(
         ...     }
         ... )
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return None
     
     try:
@@ -661,7 +663,10 @@ def transition_model_stage(
     """
     更新模型版本的阶段。
     
-    根据 Requirements 5.3，支持将模型版本转换到不同阶段。
+    .. deprecated:: 0.2.0
+        MLflow 2.9.0 起废弃 Stage API，请使用 `set_model_alias()` 替代。
+        - "Production" -> set_model_alias(model_name, "champion", version)
+        - "Staging" -> set_model_alias(model_name, "challenger", version)
     
     Args:
         model_name: 模型名称
@@ -675,50 +680,162 @@ def transition_model_stage(
         
     Returns:
         是否成功更新
-        
-    Example:
-        >>> # 将版本 1 提升到 Staging
-        >>> transition_model_stage("joke-generator", "1", "Staging")
-        True
-        >>> # 将版本 2 提升到 Production，并归档当前 Production 版本
-        >>> transition_model_stage("joke-generator", "2", "Production", archive_existing=True)
-        True
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    warnings.warn(
+        "transition_model_stage() 已废弃，MLflow 2.9.0 起推荐使用 set_model_alias()。"
+        "例如: set_model_alias(model_name, 'champion', version) 替代 stage='Production'",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return False
     
-    valid_stages = {"Staging", "Production", "Archived", "None"}
-    if stage not in valid_stages:
-        logger.error(f"无效的阶段: {stage}，有效值为: {valid_stages}")
+    # 将 Stage 映射到 Alias（新方式）
+    stage_to_alias = {
+        "Production": config.mlflow_production_alias,
+        "Staging": config.mlflow_staging_alias,
+    }
+    
+    if stage in stage_to_alias:
+        # 使用新的 Alias API
+        alias = stage_to_alias[stage]
+        return set_model_alias(model_name, alias, version)
+    elif stage == "Archived" or stage == "None":
+        # 对于 Archived/None，删除所有别名
+        try:
+            client = MlflowClient()
+            # 获取当前版本的别名并删除
+            model_version = client.get_model_version(name=model_name, version=version)
+            if hasattr(model_version, 'aliases') and model_version.aliases:
+                for alias in model_version.aliases:
+                    delete_model_alias(model_name, alias)
+            logger.info(f"已清除模型 {model_name} 版本 {version} 的所有别名")
+            return True
+        except Exception as e:
+            logger.warning(f"清除模型别名失败: {e}")
+            return False
+    else:
+        logger.error(f"无效的阶段: {stage}")
+        return False
+
+
+def set_model_alias(
+    model_name: str,
+    alias: str,
+    version: str
+) -> bool:
+    """
+    为模型版本设置别名。
+    
+    别名是 MLflow 2.9.0+ 推荐的模型版本管理方式，替代废弃的 Stage API。
+    常用别名:
+    - "champion": 生产环境当前版本（替代 Production stage）
+    - "challenger": 待验证的候选版本（替代 Staging stage）
+    
+    Args:
+        model_name: 模型名称
+        alias: 别名（如 "champion", "challenger", "v1-stable"）
+        version: 模型版本号
+        
+    Returns:
+        是否成功设置
+        
+    Example:
+        >>> # 将版本 2 设为生产版本
+        >>> set_model_alias("joke-generator", "champion", "2")
+        True
+        >>> # 加载时使用: models:/joke-generator@champion
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return False
     
     try:
         client = MlflowClient()
-        
-        # 执行阶段转换
-        client.transition_model_version_stage(
+        client.set_registered_model_alias(
             name=model_name,
-            version=version,
-            stage=stage,
-            archive_existing_versions=archive_existing
+            alias=alias,
+            version=version
         )
-        
-        logger.info(f"已更新模型 {model_name} 版本 {version} 到阶段 {stage}")
-        
-        # 验证转换是否成功
-        updated_version = client.get_model_version(name=model_name, version=version)
-        if updated_version.current_stage == stage:
-            logger.debug(f"阶段转换验证成功: {updated_version.current_stage}")
-            return True
-        else:
-            logger.warning(
-                f"阶段转换可能未完全生效: 期望 {stage}, 实际 {updated_version.current_stage}"
-            )
-            return True  # API 调用成功，但状态可能有延迟
+        logger.info(f"已设置模型 {model_name} 版本 {version} 的别名: @{alias}")
+        return True
         
     except Exception as e:
-        logger.warning(f"模型阶段转换失败: {e}")
+        logger.warning(f"设置模型别名失败: {e}")
         return False
+
+
+def delete_model_alias(
+    model_name: str,
+    alias: str
+) -> bool:
+    """
+    删除模型的别名。
+    
+    Args:
+        model_name: 模型名称
+        alias: 要删除的别名
+        
+    Returns:
+        是否成功删除
+        
+    Example:
+        >>> delete_model_alias("joke-generator", "challenger")
+        True
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
+        return False
+    
+    try:
+        client = MlflowClient()
+        client.delete_registered_model_alias(
+            name=model_name,
+            alias=alias
+        )
+        logger.info(f"已删除模型 {model_name} 的别名: @{alias}")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"删除模型别名失败: {e}")
+        return False
+
+
+def get_model_version_by_alias(
+    model_name: str,
+    alias: str
+) -> Optional[str]:
+    """
+    根据别名获取模型版本号。
+    
+    Args:
+        model_name: 模型名称
+        alias: 别名（如 "champion", "challenger"）
+        
+    Returns:
+        版本号，如果别名不存在返回 None
+        
+    Example:
+        >>> version = get_model_version_by_alias("joke-generator", "champion")
+        >>> print(version)  # "2"
+    """
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
+        return None
+    
+    try:
+        client = MlflowClient()
+        model_version = client.get_model_version_by_alias(
+            name=model_name,
+            alias=alias
+        )
+        return model_version.version
+        
+    except Exception as e:
+        logger.debug(f"获取模型别名版本失败: {e}")
+        return None
 
 
 def get_mlflow_ui_url(
@@ -759,22 +876,23 @@ def get_mlflow_ui_url(
         'http://localhost:5000/#/models/joke-generator/versions/1'
     """
     # 解析 tracking URI 获取基础 URL
-    tracking_uri = MLFLOW_TRACKING_URI
+    config = get_config()
+    tracking_uri = config.mlflow_tracking_uri
     
     # 默认回退 URL
     default_fallback = "http://localhost:5000"
     
     # 如果是本地文件路径，使用配置的 UI URL 或默认值
     if tracking_uri.startswith("./") or tracking_uri.startswith("/"):
-        base_url = MLFLOW_UI_BASE_URL or default_fallback
+        base_url = config.mlflow_ui_base_url or default_fallback
     elif tracking_uri.startswith("file://"):
-        base_url = MLFLOW_UI_BASE_URL or default_fallback
+        base_url = config.mlflow_ui_base_url or default_fallback
     elif tracking_uri.startswith("http://") or tracking_uri.startswith("https://"):
         # 远程服务器，直接使用 tracking URI
         base_url = tracking_uri.rstrip("/")
     else:
         # 其他情况（如 databricks://），使用配置的 UI URL 或默认值
-        base_url = MLFLOW_UI_BASE_URL or default_fallback
+        base_url = config.mlflow_ui_base_url or default_fallback
     
     # 根据参数构造不同的 URL
     if model_name:
@@ -806,7 +924,8 @@ def _get_experiment_id_for_run(run_id: str) -> Optional[str]:
     Returns:
         Experiment ID，如果获取失败返回 None
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return None
     
     try:

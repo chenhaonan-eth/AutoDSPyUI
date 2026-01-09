@@ -103,7 +103,7 @@ def test_mlflow_connection():
         import dspy
         from dspy import Predict
         from mlflow import MlflowClient
-        from dspyui.core.model_manager import ModelManager
+        from autodspy import ModelManager
         
         # 配置 LLM
         api_key = os.getenv("OPENAI_API_KEY")

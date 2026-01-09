@@ -124,17 +124,16 @@ def test_mlflow_connection():
     print("-" * 60)
     
     try:
-        from dspyui.core import mlflow_tracking
+        import autodspy
         from dspyui.config import MLFLOW_ENABLED, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_NAME
         
         print(f"  ✅ MLflow 集成模块导入成功")
         print(f"     - 启用状态: {MLFLOW_ENABLED}")
         print(f"     - 追踪 URI: {MLFLOW_TRACKING_URI}")
         print(f"     - 实验名称: {MLFLOW_EXPERIMENT_NAME}")
-        print(f"     - MLflow 已安装: {mlflow_tracking.MLFLOW_INSTALLED}")
         
         # 测试初始化函数
-        mlflow_tracking.init_mlflow()
+        autodspy.init_mlflow()
         print(f"  ✅ init_mlflow() 执行成功")
         
     except Exception as e:

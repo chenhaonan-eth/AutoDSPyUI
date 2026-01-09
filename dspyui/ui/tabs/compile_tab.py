@@ -1,7 +1,7 @@
 """
 Compile Program Tab
 
-INPUT:  dspyui.core.compiler, dspyui.utils.file_ops, gradio, pandas
+INPUT:  autodspy (compile_program, generate_program_response, get_mlflow_ui_url), dspyui.utils.file_ops, gradio, pandas
 OUTPUT: create_compile_tab() 函数
 POS:    主功能 Tab，提供 DSPy 程序编译界面
 
@@ -16,12 +16,10 @@ from typing import List, Tuple, Any, Dict, Optional
 import gradio as gr
 import pandas as pd
 
-from dspyui.core.compiler import compile_program
-from dspyui.core.runner import generate_program_response
+from autodspy import compile_program, generate_program_response, get_mlflow_ui_url
 from dspyui.utils.file_ops import list_prompts, export_to_csv
 from dspyui.ui.components import add_field, remove_last_field, load_csv
 from dspyui.config import LLM_OPTIONS, MLFLOW_ENABLED
-from dspyui.core.mlflow_tracking import get_mlflow_ui_url
 from dspyui.i18n import t
 
 
@@ -611,7 +609,7 @@ def create_compile_tab() -> None:
         # MLflow 模型注册
         def on_register_model_click(model_name: str, run_id: str, prompt_details: Dict[str, Any]):
             """处理注册模型按钮点击事件"""
-            from dspyui.core.mlflow_service import register_compiled_model
+            from autodspy import register_compiled_model
             
             # 调用业务逻辑层
             result = register_compiled_model(

@@ -2,19 +2,20 @@
 MLflow 模型加载器
 
 INPUT:  MLflow Model Registry, Run Artifacts
-OUTPUT: load_model_from_registry(), load_model_from_run(), list_registered_models(),
-        list_model_versions(), get_model_metadata() 函数
+OUTPUT: load_model_from_registry(), load_model_by_alias(), load_model_from_run(), 
+        list_registered_models(), list_model_versions(), get_model_metadata() 函数
 POS:    负责从 MLflow 加载模型的"读取"操作，被 runner.py 和 UI 层调用
 
 ⚠️ 一旦我被更新，务必更新我的开头注释，以及所属文件夹的 README.md
 """
 
 import logging
+import warnings
 import dspy
 from typing import Any, Dict, List, Optional
 
-from dspyui.config import MLFLOW_ENABLED
-from dspyui.core.mlflow_tracking import is_mlflow_available
+from autodspy.config import get_config
+from autodspy.mlflow.tracking import is_mlflow_available
 
 # 可选导入 MLflow
 try:
@@ -33,15 +34,22 @@ logger = logging.getLogger(__name__)
 def load_model_from_registry(
     model_name: str,
     version: Optional[str] = None,
-    stage: Optional[str] = None
+    stage: Optional[str] = None,
+    alias: Optional[str] = None
 ) -> Any:
     """
     从 MLflow Model Registry 加载模型。
     
+    支持三种方式指定版本（优先级：version > alias > stage）：
+    1. version: 指定具体版本号
+    2. alias: 使用别名（推荐，如 "champion", "challenger"）
+    3. stage: 使用阶段（已废弃，如 "Production", "Staging"）
+    
     Args:
         model_name: 注册的模型名称
-        version: 指定版本号（与 stage 二选一）
-        stage: 指定阶段 ("Staging", "Production")，与 version 二选一
+        version: 指定版本号
+        alias: 指定别名（推荐方式）
+        stage: 指定阶段（已废弃，建议使用 alias）
         
     Returns:
         加载的 DSPy 程序对象
@@ -50,20 +58,38 @@ def load_model_from_registry(
         ValueError: 当 MLflow 未启用或模型未找到时
         
     Example:
+        >>> # 推荐：使用别名
+        >>> program = load_model_from_registry("joke-generator", alias="champion")
+        >>> # 使用版本号
         >>> program = load_model_from_registry("joke-generator", version="1")
+        >>> # 已废弃：使用阶段
         >>> program = load_model_from_registry("joke-generator", stage="Production")
     """
     import os
     import pickle
     
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         raise ValueError("MLflow 未启用或未安装")
+    
+    # 如果使用 stage，发出废弃警告
+    if stage and not version and not alias:
+        warnings.warn(
+            "stage 参数已废弃，MLflow 2.9.0 起推荐使用 alias 参数。"
+            "例如: load_model_from_registry(model_name, alias='champion') "
+            "替代 stage='Production'",
+            DeprecationWarning,
+            stacklevel=2
+        )
         
     try:
-        # 构建模型 URI
+        # 构建模型 URI（优先级：version > alias > stage）
         if version:
             model_uri = f"models:/{model_name}/{version}"
+        elif alias:
+            model_uri = f"models:/{model_name}@{alias}"
         elif stage:
+            # 兼容旧的 stage 方式
             model_uri = f"models:/{model_name}/{stage}"
         else:
             model_uri = f"models:/{model_name}/latest"
@@ -112,6 +138,31 @@ def load_model_from_registry(
         raise ValueError(f"加载模型 {model_name} 失败: {e}")
 
 
+def load_model_by_alias(
+    model_name: str,
+    alias: str = "champion"
+) -> Any:
+    """
+    通过别名加载模型（便捷函数）。
+    
+    这是 load_model_from_registry(model_name, alias=alias) 的简化版本。
+    
+    Args:
+        model_name: 注册的模型名称
+        alias: 别名，默认 "champion"（生产版本）
+        
+    Returns:
+        加载的 DSPy 程序对象
+        
+    Example:
+        >>> # 加载生产版本
+        >>> program = load_model_by_alias("joke-generator")
+        >>> # 加载候选版本
+        >>> program = load_model_by_alias("joke-generator", "challenger")
+    """
+    return load_model_from_registry(model_name, alias=alias)
+
+
 def load_model_from_run(
     run_id: str,
     artifact_path: str = "program"
@@ -132,7 +183,8 @@ def load_model_from_run(
     import os
     import pickle
     
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         raise ValueError("MLflow 未启用或未安装")
         
     try:
@@ -186,7 +238,8 @@ def list_registered_models() -> List[Dict[str, Any]]:
         >>> for m in models:
         ...     print(f"{m['name']}: {len(m['latest_versions'])} versions")
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return []
     
     # 快速检查连通性，防止卡死
@@ -234,13 +287,15 @@ def list_model_versions(model_name: str) -> List[Dict[str, Any]]:
     Returns:
         版本信息列表，每个元素包含:
         - version: 版本号
-        - stage: 当前阶段
+        - stage: 当前阶段（已废弃，仅供参考）
+        - aliases: 版本别名列表（推荐使用）
         - run_id: 关联的 Run ID
         - creation_timestamp: 创建时间戳
         - description: 版本描述
         - tags: 版本标签
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return []
     
     # 快速检查连通性
@@ -253,9 +308,13 @@ def list_model_versions(model_name: str) -> List[Dict[str, Any]]:
         
         result = []
         for v in versions:
+            # 获取别名列表
+            aliases = list(v.aliases) if hasattr(v, 'aliases') and v.aliases else []
+            
             result.append({
                 "version": v.version,
-                "stage": v.current_stage,
+                "stage": v.current_stage,  # 保留兼容，但标记为废弃
+                "aliases": aliases,  # 新增：别名列表
                 "run_id": v.run_id,
                 "creation_timestamp": v.creation_timestamp,
                 "description": v.description or "",
@@ -287,7 +346,8 @@ def get_model_metadata(
     Returns:
         元数据字典，包含:
         - version: 版本号
-        - stage: 当前阶段
+        - stage: 当前阶段（已废弃）
+        - aliases: 版本别名列表（推荐使用）
         - run_id: 关联的 Run ID
         - input_fields: 输入字段（从 tags 获取）
         - output_fields: 输出字段（从 tags 获取）
@@ -295,7 +355,8 @@ def get_model_metadata(
         - dspy_module: DSPy 模块类型
         - optimizer: 优化器类型
     """
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return {}
     
     if not is_mlflow_available(timeout=0.5):
@@ -307,9 +368,13 @@ def get_model_metadata(
         
         tags = dict(model_version.tags) if model_version.tags else {}
         
+        # 获取别名列表
+        aliases = list(model_version.aliases) if hasattr(model_version, 'aliases') and model_version.aliases else []
+        
         metadata = {
             "version": model_version.version,
-            "stage": model_version.current_stage,
+            "stage": model_version.current_stage,  # 保留兼容
+            "aliases": aliases,  # 新增：别名列表
             "run_id": model_version.run_id,
             "description": model_version.description or "",
             "creation_timestamp": model_version.creation_timestamp,
@@ -347,7 +412,8 @@ def load_prompt_artifact(
     import os
     import json
     
-    if not MLFLOW_ENABLED or not MLFLOW_INSTALLED:
+    config = get_config()
+    if not config.mlflow_enabled or not MLFLOW_INSTALLED:
         return None
         
     try:
@@ -427,7 +493,8 @@ def load_prompt_artifact(
 
 def get_registered_run_ids() -> set:
     """获取所有已注册模型版本关联的 Run ID 集合"""
-    if not MLFLOW_ENABLED:
+    config = get_config()
+    if not config.mlflow_enabled:
         return set()
     try:
         from mlflow import MlflowClient

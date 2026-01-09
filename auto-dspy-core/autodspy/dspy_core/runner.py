@@ -16,9 +16,9 @@ from typing import Dict, Any, List, Tuple, Optional, Callable
 
 import pandas as pd
 
-from dspyui.core.signatures import create_custom_signature
-from dspyui.core.modules import create_dspy_module
-from dspyui.config import MLFLOW_ENABLED
+from autodspy.dspy_core.signatures import create_custom_signature
+from autodspy.dspy_core.modules import create_dspy_module
+from autodspy.config import get_config
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -340,7 +340,8 @@ def _log_batch_inference_stats(
         
     Requirements: 4.2
     """
-    if not MLFLOW_ENABLED:
+    config = get_config()
+    if not config.mlflow_enabled:
         return
     
     try:
@@ -436,8 +437,8 @@ def generate_response_from_mlflow(
         ValueError: 当模型加载失败时
     """
     import dspy
-    from dspyui.core.mlflow_loader import load_model_from_registry, get_model_metadata
-    from dspyui.core.compiler import _create_lm
+    from autodspy.mlflow.loader import load_model_from_registry, get_model_metadata
+    from autodspy.dspy_core.compiler import _create_lm
     
     # 加载模型元数据以获取输入输出字段
     metadata = get_model_metadata(model_name, version)
@@ -503,8 +504,8 @@ def run_batch_inference_from_mlflow(
         包含输入和输出列的 DataFrame
     """
     import dspy
-    from dspyui.core.mlflow_loader import load_model_from_registry, get_model_metadata
-    from dspyui.core.compiler import _create_lm
+    from autodspy.mlflow.loader import load_model_from_registry, get_model_metadata
+    from autodspy.dspy_core.compiler import _create_lm
     
     # 加载模型元数据
     metadata = get_model_metadata(model_name, version)

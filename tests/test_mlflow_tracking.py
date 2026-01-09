@@ -13,20 +13,35 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
+# 检查 MLflow 是否可用
+try:
+    import mlflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+
+# 整个模块需要 MLflow
+pytestmark = pytest.mark.skipif(
+    not MLFLOW_AVAILABLE,
+    reason="MLflow 未安装，跳过 MLflow 追踪模块测试"
+)
+
 # 导入被测模块
-from dspyui.core.mlflow_tracking import (
-    truncate_param,
-    compute_dataset_hash,
-    _serialize_value,
+from autodspy import (
     get_mlflow_ui_url,
     init_mlflow,
     track_compilation,
     log_compilation_metrics,
     log_compilation_artifacts,
     log_evaluation_table,
-    log_dataset_metadata,
     register_model,
     transition_model_stage,
+)
+from autodspy.mlflow.tracking import (
+    truncate_param,
+    compute_dataset_hash,
+    _serialize_value,
+    log_dataset_metadata,
 )
 
 

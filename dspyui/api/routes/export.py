@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from dspyui.api.dependencies import get_data_exporter
-from dspyui.core.data_exporter import DataExporter
+from autodspy import DataExporter
 
 logger = logging.getLogger(__name__)
 

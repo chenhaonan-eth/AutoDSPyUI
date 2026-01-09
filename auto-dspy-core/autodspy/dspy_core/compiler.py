@@ -23,25 +23,12 @@ from dspy.teleprompt import (
     COPRO,
 )
 
-from dspyui.config import (
-    SUPPORTED_GROQ_MODELS,
-    SUPPORTED_GOOGLE_MODELS,
-    SUPPORTED_DEEPSEEK_MODELS,
-    DSPY_CACHE_ENABLED,
-    DSPY_NUM_THREADS,
-    MIPRO_NUM_CANDIDATES,
-    MIPRO_INIT_TEMPERATURE,
-    MIPRO_NUM_BATCHES,
-    MIPRO_MAX_BOOTSTRAPPED_DEMOS,
-    MIPRO_MAX_LABELED_DEMOS,
-    BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
-    BOOTSTRAP_MAX_LABELED_DEMOS,
-)
-from dspyui.core.signatures import create_custom_signature
-from dspyui.core.modules import create_dspy_module
-from dspyui.core.metrics import create_metric
-from dspyui.utils.id_generator import generate_human_readable_id
-from dspyui.core.mlflow_tracking import (
+from autodspy.config import get_config
+from autodspy.dspy_core.signatures import create_custom_signature
+from autodspy.dspy_core.modules import create_dspy_module
+from autodspy.dspy_core.metrics import create_metric
+from autodspy.dspy_core.utils import generate_human_readable_id
+from autodspy.mlflow.tracking import (
     init_mlflow,
     track_compilation,
     log_compilation_metrics,
@@ -68,20 +55,22 @@ def _create_lm(model: str) -> dspy.LM:
     Raises:
         ValueError: 当模型不支持时
     """
+    config = get_config()
+    
     if model.startswith("gpt-"):
-        return dspy.LM(f'openai/{model}', api_base=os.environ.get("OPENAI_API_BASE"), cache=DSPY_CACHE_ENABLED)
+        return dspy.LM(f'openai/{model}', api_base=os.environ.get("OPENAI_API_BASE"), cache=config.cache_enabled)
     elif model.startswith("claude-"):
-        return dspy.LM(f'anthropic/{model}', cache=DSPY_CACHE_ENABLED)
-    elif model in SUPPORTED_GROQ_MODELS:
-        return dspy.LM(f'groq/{model}', api_key=os.environ.get("GROQ_API_KEY"), cache=DSPY_CACHE_ENABLED)
-    elif model in SUPPORTED_GOOGLE_MODELS:
-        return dspy.LM(f'google/{model}', api_key=os.environ.get("GOOGLE_API_KEY"), cache=DSPY_CACHE_ENABLED)
-    elif model in SUPPORTED_DEEPSEEK_MODELS:
+        return dspy.LM(f'anthropic/{model}', cache=config.cache_enabled)
+    elif model in config.supported_groq_models:
+        return dspy.LM(f'groq/{model}', api_key=os.environ.get("GROQ_API_KEY"), cache=config.cache_enabled)
+    elif model in config.supported_google_models:
+        return dspy.LM(f'google/{model}', api_key=os.environ.get("GOOGLE_API_KEY"), cache=config.cache_enabled)
+    elif model in config.supported_deepseek_models:
         return dspy.LM(
             f'openai/{model}',
             api_key=os.environ.get("DEEPSEEK_API_KEY"),
             api_base=os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
-            cache=DSPY_CACHE_ENABLED
+            cache=config.cache_enabled
         )
     else:
         raise ValueError(f"Unsupported LLM model: {model}")
@@ -168,11 +157,14 @@ def compile_program(
     split_index = int(0.8 * len(dataset))
     trainset, devset = dataset[:split_index], dataset[split_index:]
 
+    # 获取配置
+    config = get_config()
+    
     # 创建评估指标（默认使用 zero-shot 评判程序，避免需要预先训练）
     metric = create_metric(metric_type, output_fields, judge_prompt_id, use_compiled_judge=False)
     
     # 评估参数 (num_threads 从配置读取)
-    kwargs = dict(num_threads=DSPY_NUM_THREADS, display_progress=True, display_table=1)
+    kwargs = dict(num_threads=config.num_threads, display_progress=True, display_table=1)
 
     # 生成人类可读的 ID（提前生成，用于 MLflow run_name）
     human_readable_id = generate_human_readable_id(
@@ -212,25 +204,25 @@ def compile_program(
         # 使用 dspy.context() 进行线程安全的 LM 配置
         with dspy.context(lm=lm):
             # 建立基线评估
-            baseline_evaluate = Evaluate(metric=metric, devset=devset, num_threads=DSPY_NUM_THREADS)
+            baseline_evaluate = Evaluate(metric=metric, devset=devset, num_threads=config.num_threads)
             baseline_score = baseline_evaluate(module)
 
             # 设置优化器
             if optimizer == "BootstrapFewShot":
                 teleprompter = BootstrapFewShot(
                     metric=metric,
-                    max_bootstrapped_demos=BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
-                    max_labeled_demos=BOOTSTRAP_MAX_LABELED_DEMOS,
+                    max_bootstrapped_demos=config.bootstrap_max_bootstrapped_demos,
+                    max_labeled_demos=config.bootstrap_max_labeled_demos,
                     teacher_settings=dict(lm=teacher_lm)
                 )
                 compiled_program = teleprompter.compile(module, trainset=trainset)
             elif optimizer == "BootstrapFewShotWithRandomSearch":
                 teleprompter = BootstrapFewShotWithRandomSearch(
                     metric=metric,
-                    max_bootstrapped_demos=BOOTSTRAP_MAX_BOOTSTRAPPED_DEMOS,
-                    max_labeled_demos=BOOTSTRAP_MAX_LABELED_DEMOS,
+                    max_bootstrapped_demos=config.bootstrap_max_bootstrapped_demos,
+                    max_labeled_demos=config.bootstrap_max_labeled_demos,
                     teacher_settings=dict(lm=teacher_lm),
-                    num_threads=DSPY_NUM_THREADS
+                    num_threads=config.num_threads
                 )
                 compiled_program = teleprompter.compile(module, trainset=trainset, valset=devset)
             elif optimizer == "COPRO":
@@ -244,16 +236,16 @@ def compile_program(
                     metric=metric,
                     prompt_model=lm,
                     task_model=teacher_lm,
-                    num_candidates=MIPRO_NUM_CANDIDATES,
-                    init_temperature=MIPRO_INIT_TEMPERATURE
+                    num_candidates=config.mipro_num_candidates,
+                    init_temperature=config.mipro_init_temperature
                 )
                 compiled_program = teleprompter.compile(
                     module,
                     trainset=trainset,
                     valset=devset,
-                    num_batches=MIPRO_NUM_BATCHES,
-                    max_bootstrapped_demos=MIPRO_MAX_BOOTSTRAPPED_DEMOS,
-                    max_labeled_demos=MIPRO_MAX_LABELED_DEMOS,
+                    num_batches=config.mipro_num_batches,
+                    max_bootstrapped_demos=config.mipro_max_bootstrapped_demos,
+                    max_labeled_demos=config.mipro_max_labeled_demos,
                     eval_kwargs=kwargs,
                     requires_permission_to_run=False
                 )
@@ -261,7 +253,7 @@ def compile_program(
                 raise ValueError(f"Unsupported optimizer: {optimizer}")
 
             # 评估编译后的程序
-            evaluate = Evaluate(metric=metric, devset=devset, num_threads=DSPY_NUM_THREADS)
+            evaluate = Evaluate(metric=metric, devset=devset, num_threads=config.num_threads)
             score_result = evaluate(compiled_program)
 
             # 提取数值分数 (兼容 EvaluationResult 对象和数值)

@@ -16,8 +16,8 @@ import numpy as np
 import dspy
 from openai import OpenAI
 
-from dspyui.core.signatures import create_custom_signature
-from dspyui.core.modules import create_dspy_module
+from autodspy.dspy_core.signatures import create_custom_signature
+from autodspy.dspy_core.modules import create_dspy_module
 
 
 def create_exact_match_metric(output_fields: List[str]) -> Callable:

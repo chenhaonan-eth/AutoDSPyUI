@@ -14,6 +14,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+# 检查 MLflow 是否可用
+try:
+    import mlflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+
+# 整个模块需要 MLflow
+pytestmark = pytest.mark.skipif(
+    not MLFLOW_AVAILABLE,
+    reason="MLflow 未安装，跳过模型生命周期集成测试"
+)
+
 from dspyui.api.app import create_app
 
 
@@ -26,9 +39,9 @@ class TestModelLifecycleFlow:
         app = create_app()
         
         # 手动初始化应用状态（模拟 lifespan startup）
-        from dspyui.core.model_manager import ModelManager
-        from dspyui.core.feedback import FeedbackService
-        from dspyui.core.data_exporter import DataExporter
+        from autodspy import ModelManager
+        from autodspy import FeedbackService
+        from autodspy import DataExporter
         from dspyui.config import get_api_config
         
         config = get_api_config()
@@ -450,9 +463,9 @@ class TestModelCacheInvalidation:
         app = create_app()
         
         # 手动初始化应用状态（模拟 lifespan startup）
-        from dspyui.core.model_manager import ModelManager
-        from dspyui.core.feedback import FeedbackService
-        from dspyui.core.data_exporter import DataExporter
+        from autodspy import ModelManager
+        from autodspy import FeedbackService
+        from autodspy import DataExporter
         from dspyui.config import get_api_config
         
         config = get_api_config()

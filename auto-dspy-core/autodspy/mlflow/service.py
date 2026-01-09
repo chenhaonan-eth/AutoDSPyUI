@@ -10,9 +10,9 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-from dspyui.config import MLFLOW_ENABLED
-from dspyui.core.mlflow_registry import register_model
-from dspyui.core.mlflow_tracking import get_mlflow_ui_url
+from autodspy.config import get_config
+from autodspy.mlflow.registry import register_model
+from autodspy.mlflow.tracking import get_mlflow_ui_url
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,8 @@ def register_compiled_model(
         ModelRegistrationResult 包含注册结果
     """
     # 检查 MLflow 是否启用
-    if not MLFLOW_ENABLED:
+    config = get_config()
+    if not config.mlflow_enabled:
         return ModelRegistrationResult(
             success=False,
             error_message="MLflow is not enabled",

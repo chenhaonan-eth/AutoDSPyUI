@@ -1,7 +1,7 @@
 """
 DSPyUI 主包
 
-INPUT:  core, utils, ui 子模块
+INPUT:  autodspy (核心功能), config, utils, ui 子模块
 OUTPUT: 公共 API (compile_program, list_prompts, generate_program_response 等)
 POS:    包入口，统一导出公共接口
 
@@ -14,8 +14,8 @@ from dspyui.config import (
     SUPPORTED_GOOGLE_MODELS,
     DEFAULT_LM_MODEL,
 )
-from dspyui.core.compiler import compile_program
-from dspyui.core.runner import generate_program_response
+# 从 autodspy 导入核心功能
+from autodspy import compile_program, generate_program_response
 from dspyui.utils.file_ops import list_prompts, load_example_csv, export_to_csv
 
 __all__ = [
